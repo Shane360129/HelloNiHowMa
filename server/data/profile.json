@@ -1,0 +1,14 @@
+{
+  "name": "Shane",
+  "title": "香氛藝術家 | Fragrance Artist",
+  "bio": "熱愛香氛藝術，致力於將東方與西方的香氣文化融合，創造出獨特的嗅覺體驗。每一款作品都是一段故事，一種情感的表達。",
+  "avatar": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&h=300&fit=crop&crop=face",
+  "email": "shane@fragrance.com",
+  "phone": "+886 912 345 678",
+  "location": "台北市，台灣",
+  "social": {
+    "instagram": "https://instagram.com",
+    "facebook": "https://facebook.com",
+    "line": ""
+  }
+}

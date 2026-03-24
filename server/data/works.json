@@ -1,0 +1,58 @@
+[
+  {
+    "id": "1",
+    "title": "晨露花園",
+    "description": "以清晨花園的露珠為靈感，融合了白茶、茉莉與雪松的清新香氣，帶來寧靜與放鬆的感受。",
+    "image": "https://images.unsplash.com/photo-1541643600914-78b084683601?w=600&h=400&fit=crop",
+    "category": "花香調",
+    "notes": {
+      "top": "佛手柑、白茶",
+      "middle": "茉莉、玫瑰",
+      "base": "雪松、白麝香"
+    },
+    "featured": true,
+    "createdAt": "2024-01-15"
+  },
+  {
+    "id": "2",
+    "title": "東方夜語",
+    "description": "靈感源自東方夜市的溫暖氛圍，沉穩的琥珀與檀香交織出神秘而迷人的東方韻味。",
+    "image": "https://images.unsplash.com/photo-1594035910387-fbd1a485b12e?w=600&h=400&fit=crop",
+    "category": "東方調",
+    "notes": {
+      "top": "荳蔻、肉桂",
+      "middle": "玫瑰、鳶尾花",
+      "base": "琥珀、檀香"
+    },
+    "featured": true,
+    "createdAt": "2024-03-20"
+  },
+  {
+    "id": "3",
+    "title": "海風輕拂",
+    "description": "捕捉海邊微風的自由與清爽，海洋元素與柑橘交織，宛如漫步在陽光海岸。",
+    "image": "https://images.unsplash.com/photo-1587017539504-67cfbddac569?w=600&h=400&fit=crop",
+    "category": "海洋調",
+    "notes": {
+      "top": "海鹽、檸檬",
+      "middle": "海藻、薰衣草",
+      "base": "浮木、麝香"
+    },
+    "featured": false,
+    "createdAt": "2024-05-10"
+  },
+  {
+    "id": "4",
+    "title": "森林冥想",
+    "description": "深入森林的靜謐時光，松木與苔蘚的自然香氣，引領心靈回歸大自然的懷抱。",
+    "image": "https://images.unsplash.com/photo-1595535873420-a599195b3f4a?w=600&h=400&fit=crop",
+    "category": "木質調",
+    "notes": {
+      "top": "松針、尤加利",
+      "middle": "苔蘚、鼠尾草",
+      "base": "雪松、廣藿香"
+    },
+    "featured": true,
+    "createdAt": "2024-07-08"
+  }
+]
