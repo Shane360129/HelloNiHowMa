@@ -2,7 +2,7 @@ services:
   - type: web
     name: fragrance-atelier
     runtime: node
-    buildCommand: npm run render-build
+    buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install
     startCommand: npm start
     envVars:
       - key: NODE_ENV
