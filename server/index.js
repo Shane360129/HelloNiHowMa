@@ -1,10 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const { v4: uuidv4 } = require('uuid');
+const connectDB = require('./db');
+const Admin = require('./models/Admin');
+const Profile = require('./models/Profile');
+const Work = require('./models/Work');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -14,26 +16,15 @@ const JWT_SECRET = process.env.JWT_SECRET || 'fragrance-admin-secret-key-2024';
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Data helpers
-const dataDir = path.join(__dirname, 'data');
-
-function readJSON(filename) {
-  return JSON.parse(fs.readFileSync(path.join(dataDir, filename), 'utf-8'));
-}
-
-function writeJSON(filename, data) {
-  fs.writeFileSync(path.join(dataDir, filename), JSON.stringify(data, null, 2));
-}
-
-// Initialize admin password on first run
-(async () => {
-  const admin = readJSON('admin.json');
-  if (admin.password.includes('defaultHash')) {
-    admin.password = await bcrypt.hash('admin123', 10);
-    writeJSON('admin.json', admin);
+// Initialize admin on first run
+async function initAdmin() {
+  const existing = await Admin.findOne({ username: 'admin' });
+  if (!existing) {
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+    await Admin.create({ username: 'admin', password: hashedPassword });
     console.log('Admin initialized - username: admin, password: admin123');
   }
-})();
+}
 
 // Auth middleware
 function authMiddleware(req, res, next) {
@@ -50,22 +41,24 @@ function authMiddleware(req, res, next) {
 // ============ Public API ============
 
 // Get profile
-app.get('/api/profile', (req, res) => {
-  res.json(readJSON('profile.json'));
+app.get('/api/profile', async (req, res) => {
+  const profile = await Profile.findOne();
+  res.json(profile || {});
 });
 
 // Get all works
-app.get('/api/works', (req, res) => {
-  res.json(readJSON('works.json'));
+app.get('/api/works', async (req, res) => {
+  const works = await Work.find().sort({ createdAt: -1 });
+  res.json(works);
 });
 
 // ============ Auth API ============
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  const admin = readJSON('admin.json');
+  const admin = await Admin.findOne({ username });
 
-  if (username !== admin.username) {
+  if (!admin) {
     return res.status(401).json({ error: '帳號或密碼錯誤' });
   }
 
@@ -86,55 +79,45 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => {
 // ============ Admin API ============
 
 // Update profile
-app.put('/api/admin/profile', authMiddleware, (req, res) => {
-  const profile = req.body;
-  writeJSON('profile.json', profile);
+app.put('/api/admin/profile', authMiddleware, async (req, res) => {
+  const profile = await Profile.findOneAndUpdate({}, req.body, {
+    new: true,
+    upsert: true,
+    runValidators: true
+  });
   res.json(profile);
 });
 
 // Create work
-app.post('/api/admin/works', authMiddleware, (req, res) => {
-  const works = readJSON('works.json');
-  const newWork = {
-    id: uuidv4(),
-    ...req.body,
-    createdAt: new Date().toISOString().split('T')[0]
-  };
-  works.push(newWork);
-  writeJSON('works.json', works);
-  res.status(201).json(newWork);
+app.post('/api/admin/works', authMiddleware, async (req, res) => {
+  const work = await Work.create(req.body);
+  res.status(201).json(work);
 });
 
 // Update work
-app.put('/api/admin/works/:id', authMiddleware, (req, res) => {
-  const works = readJSON('works.json');
-  const index = works.findIndex(w => w.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: '作品不存在' });
-  works[index] = { ...works[index], ...req.body, id: req.params.id };
-  writeJSON('works.json', works);
-  res.json(works[index]);
+app.put('/api/admin/works/:id', authMiddleware, async (req, res) => {
+  const work = await Work.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!work) return res.status(404).json({ error: '作品不存在' });
+  res.json(work);
 });
 
 // Delete work
-app.delete('/api/admin/works/:id', authMiddleware, (req, res) => {
-  let works = readJSON('works.json');
-  const index = works.findIndex(w => w.id === req.params.id);
-  if (index === -1) return res.status(404).json({ error: '作品不存在' });
-  works.splice(index, 1);
-  writeJSON('works.json', works);
+app.delete('/api/admin/works/:id', authMiddleware, async (req, res) => {
+  const work = await Work.findByIdAndDelete(req.params.id);
+  if (!work) return res.status(404).json({ error: '作品不存在' });
   res.json({ message: '已刪除' });
 });
 
 // Change password
 app.put('/api/admin/password', authMiddleware, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  const admin = readJSON('admin.json');
+  const admin = await Admin.findOne({ username: req.user.username });
 
   const valid = await bcrypt.compare(currentPassword, admin.password);
   if (!valid) return res.status(400).json({ error: '目前密碼不正確' });
 
   admin.password = await bcrypt.hash(newPassword, 10);
-  writeJSON('admin.json', admin);
+  await admin.save();
   res.json({ message: '密碼已更新' });
 });
 
@@ -146,6 +129,10 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Connect to DB and start server
+connectDB().then(async () => {
+  await initAdmin();
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
 });
