@@ -1,23 +1,20 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../db');
 
-const serviceSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  subtitle: String,
-  description: String,
-  price: String,
-  duration: String,
-  image: String,
-  featured: { type: Boolean, default: false },
-  order: { type: Number, default: 0 }
-});
+const Service = sequelize.define(
+  'Service',
+  {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    name: { type: DataTypes.STRING, allowNull: false },
+    subtitle: { type: DataTypes.STRING, defaultValue: '' },
+    description: { type: DataTypes.TEXT, defaultValue: '' },
+    price: { type: DataTypes.STRING, defaultValue: '' },
+    duration: { type: DataTypes.STRING, defaultValue: '' },
+    image: { type: DataTypes.TEXT, defaultValue: '' },
+    featured: { type: DataTypes.BOOLEAN, defaultValue: false },
+    order: { type: DataTypes.INTEGER, defaultValue: 0 }
+  },
+  { tableName: 'services', timestamps: false }
+);
 
-serviceSchema.set('toJSON', {
-  virtuals: true,
-  transform: (doc, ret) => {
-    ret.id = ret._id.toString();
-    delete ret.__v;
-    return ret;
-  }
-});
-
-module.exports = mongoose.model('Service', serviceSchema);
+module.exports = Service;

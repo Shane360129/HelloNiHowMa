@@ -1,30 +1,23 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../db');
 
-const profileSchema = new mongoose.Schema({
-  name: String,
-  title: String,
-  tagline: String,
-  bio: String,
-  avatar: String,
-  heroImage: String,
-  email: String,
-  phone: String,
-  location: String,
-  address: String,
-  social: {
-    instagram: String,
-    facebook: String,
-    line: String,
-    threads: String
-  }
-});
+const Profile = sequelize.define(
+  'Profile',
+  {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    name: { type: DataTypes.STRING, defaultValue: '' },
+    title: { type: DataTypes.STRING, defaultValue: '' },
+    tagline: { type: DataTypes.STRING, defaultValue: '' },
+    bio: { type: DataTypes.TEXT, defaultValue: '' },
+    avatar: { type: DataTypes.TEXT, defaultValue: '' },
+    heroImage: { type: DataTypes.TEXT, defaultValue: '' },
+    email: { type: DataTypes.STRING, defaultValue: '' },
+    phone: { type: DataTypes.STRING, defaultValue: '' },
+    location: { type: DataTypes.STRING, defaultValue: '' },
+    address: { type: DataTypes.STRING, defaultValue: '' },
+    social: { type: DataTypes.JSONB, defaultValue: {} }
+  },
+  { tableName: 'profiles', timestamps: false }
+);
 
-profileSchema.set('toJSON', {
-  virtuals: true,
-  transform: (doc, ret) => {
-    delete ret.__v;
-    return ret;
-  }
-});
-
-module.exports = mongoose.model('Profile', profileSchema);
+module.exports = Profile;

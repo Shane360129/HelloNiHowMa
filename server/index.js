@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const connectDB = require('./db');
+const { connectDB } = require('./db');
 const Admin = require('./models/Admin');
 const Profile = require('./models/Profile');
 const Work = require('./models/Work');
@@ -20,7 +20,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 async function initAdmin() {
-  const existing = await Admin.findOne({ username: 'admin' });
+  const existing = await Admin.findOne({ where: { username: 'admin' } });
   if (!existing) {
     const hashedPassword = await bcrypt.hash('admin123', 10);
     await Admin.create({ username: 'admin', password: hashedPassword });
@@ -55,12 +55,12 @@ app.get('/api/profile', async (req, res) => {
 });
 
 app.get('/api/works', async (req, res) => {
-  const works = await Work.find().sort({ createdAt: -1 });
+  const works = await Work.findAll({ order: [['id', 'DESC']] });
   res.json(works);
 });
 
 app.get('/api/services', async (req, res) => {
-  const services = await Service.find().sort({ order: 1, _id: 1 });
+  const services = await Service.findAll({ order: [['order', 'ASC'], ['id', 'ASC']] });
   res.json(services);
 });
 
@@ -108,7 +108,7 @@ app.post('/api/bookings', async (req, res) => {
 
 app.post('/api/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  const admin = await Admin.findOne({ username });
+  const admin = await Admin.findOne({ where: { username } });
   if (!admin) return res.status(401).json({ error: '帳號或密碼錯誤' });
 
   const valid = await bcrypt.compare(password, admin.password);
@@ -125,11 +125,12 @@ app.get('/api/auth/verify', authMiddleware, (req, res) => {
 // ============ Admin: Profile ============
 
 app.put('/api/admin/profile', authMiddleware, async (req, res) => {
-  const profile = await Profile.findOneAndUpdate({}, req.body, {
-    new: true,
-    upsert: true,
-    runValidators: true
-  });
+  let profile = await Profile.findOne();
+  if (profile) {
+    await profile.update(req.body);
+  } else {
+    profile = await Profile.create(req.body);
+  }
   res.json(profile);
 });
 
@@ -141,14 +142,16 @@ app.post('/api/admin/works', authMiddleware, async (req, res) => {
 });
 
 app.put('/api/admin/works/:id', authMiddleware, async (req, res) => {
-  const work = await Work.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const work = await Work.findByPk(req.params.id);
   if (!work) return res.status(404).json({ error: '作品不存在' });
+  await work.update(req.body);
   res.json(work);
 });
 
 app.delete('/api/admin/works/:id', authMiddleware, async (req, res) => {
-  const work = await Work.findByIdAndDelete(req.params.id);
+  const work = await Work.findByPk(req.params.id);
   if (!work) return res.status(404).json({ error: '作品不存在' });
+  await work.destroy();
   res.json({ message: '已刪除' });
 });
 
@@ -160,14 +163,16 @@ app.post('/api/admin/services', authMiddleware, async (req, res) => {
 });
 
 app.put('/api/admin/services/:id', authMiddleware, async (req, res) => {
-  const service = await Service.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  const service = await Service.findByPk(req.params.id);
   if (!service) return res.status(404).json({ error: '項目不存在' });
+  await service.update(req.body);
   res.json(service);
 });
 
 app.delete('/api/admin/services/:id', authMiddleware, async (req, res) => {
-  const service = await Service.findByIdAndDelete(req.params.id);
+  const service = await Service.findByPk(req.params.id);
   if (!service) return res.status(404).json({ error: '項目不存在' });
+  await service.destroy();
   res.json({ message: '已刪除' });
 });
 
@@ -175,8 +180,8 @@ app.delete('/api/admin/services/:id', authMiddleware, async (req, res) => {
 
 app.get('/api/admin/bookings', authMiddleware, async (req, res) => {
   const { status } = req.query;
-  const filter = status ? { status } : {};
-  const bookings = await Booking.find(filter).sort({ createdAt: -1 });
+  const where = status ? { status } : {};
+  const bookings = await Booking.findAll({ where, order: [['createdAt', 'DESC']] });
   res.json(bookings);
 });
 
@@ -186,14 +191,16 @@ app.patch('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
   for (const key of allowed) {
     if (req.body[key] !== undefined) update[key] = req.body[key];
   }
-  const booking = await Booking.findByIdAndUpdate(req.params.id, update, { new: true });
+  const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
+  await booking.update(update);
   res.json(booking);
 });
 
 app.delete('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
-  const booking = await Booking.findByIdAndDelete(req.params.id);
+  const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
+  await booking.destroy();
   res.json({ message: '已刪除' });
 });
 
@@ -205,11 +212,12 @@ app.get('/api/admin/settings', authMiddleware, async (req, res) => {
 });
 
 app.put('/api/admin/settings', authMiddleware, async (req, res) => {
-  const settings = await Setting.findOneAndUpdate({}, req.body, {
-    new: true,
-    upsert: true,
-    runValidators: true
-  });
+  let settings = await Setting.findOne();
+  if (settings) {
+    await settings.update(req.body);
+  } else {
+    settings = await Setting.create(req.body);
+  }
   res.json(settings);
 });
 
@@ -226,7 +234,7 @@ app.post('/api/admin/line/test', authMiddleware, async (req, res) => {
 
 app.put('/api/admin/password', authMiddleware, async (req, res) => {
   const { currentPassword, newPassword } = req.body;
-  const admin = await Admin.findOne({ username: req.user.username });
+  const admin = await Admin.findOne({ where: { username: req.user.username } });
   const valid = await bcrypt.compare(currentPassword, admin.password);
   if (!valid) return res.status(400).json({ error: '目前密碼不正確' });
   admin.password = await bcrypt.hash(newPassword, 10);

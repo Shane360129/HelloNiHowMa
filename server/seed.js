@@ -1,6 +1,5 @@
-const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
-const connectDB = require('./db');
+const { sequelize, connectDB } = require('./db');
 const Admin = require('./models/Admin');
 const Profile = require('./models/Profile');
 const Work = require('./models/Work');
@@ -10,7 +9,7 @@ const Setting = require('./models/Setting');
 async function seed() {
   await connectDB();
 
-  const existingAdmin = await Admin.findOne({ username: 'admin' });
+  const existingAdmin = await Admin.findOne({ where: { username: 'admin' } });
   if (!existingAdmin) {
     const hashedPassword = await bcrypt.hash('admin123', 10);
     await Admin.create({ username: 'admin', password: hashedPassword });
@@ -44,9 +43,9 @@ async function seed() {
     console.log('Profile already exists, skipping');
   }
 
-  const serviceCount = await Service.countDocuments();
+  const serviceCount = await Service.count();
   if (serviceCount === 0) {
-    await Service.insertMany([
+    await Service.bulkCreate([
       {
         name: '韓式霧眉',
         subtitle: 'Korean Misty Brow',
@@ -103,9 +102,9 @@ async function seed() {
     console.log(`Services already exist (${serviceCount} items), skipping`);
   }
 
-  const workCount = await Work.countDocuments();
+  const workCount = await Work.count();
   if (workCount === 0) {
-    await Work.insertMany([
+    await Work.bulkCreate([
       {
         title: '自然柔霧眉',
         description: '搭配客人原生眉型的柔霧設計，素顏也能呈現乾淨俐落的好感妝容。',
@@ -153,7 +152,7 @@ async function seed() {
   }
 
   console.log('Seed complete');
-  await mongoose.disconnect();
+  await sequelize.close();
 }
 
 seed().catch(err => {
