@@ -16,6 +16,7 @@ export default function AdminLayout({ children }) {
     { path: '/admin/bookings', label: '預約管理' },
     { path: '/admin/services', label: '服務項目' },
     { path: '/admin/works', label: '作品管理' },
+    { path: '/admin/news', label: '最新消息' },
     { path: '/admin/profile', label: '個人資訊' },
     { path: '/admin/settings', label: '系統設定' }
   ];

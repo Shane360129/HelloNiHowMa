@@ -9,6 +9,7 @@ const Profile = sequelize.define(
     title: { type: DataTypes.STRING, defaultValue: '' },
     tagline: { type: DataTypes.STRING, defaultValue: '' },
     bio: { type: DataTypes.TEXT, defaultValue: '' },
+    homeIntro: { type: DataTypes.TEXT, defaultValue: '' },
     avatar: { type: DataTypes.TEXT, defaultValue: '' },
     heroImage: { type: DataTypes.TEXT, defaultValue: '' },
     email: { type: DataTypes.STRING, defaultValue: '' },

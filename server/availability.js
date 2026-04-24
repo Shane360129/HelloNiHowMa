@@ -179,6 +179,7 @@ async function getMonthAvailability(year, month, serviceIdentifier) {
     return {
       date: dateStr,
       isOpen: d.isOpen,
+      openRanges: d.openRanges,
       totalSlots: d.slots.length,
       availableSlots: availableCount,
       bookings: d.bookings

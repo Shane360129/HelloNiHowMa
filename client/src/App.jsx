@@ -11,6 +11,7 @@ import EditProfile from './pages/admin/EditProfile';
 import ManageWorks from './pages/admin/ManageWorks';
 import ManageServices from './pages/admin/ManageServices';
 import ManageBookings from './pages/admin/ManageBookings';
+import ManageNews from './pages/admin/ManageNews';
 import Settings from './pages/admin/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/admin/bookings" element={<ProtectedRoute><ManageBookings /></ProtectedRoute>} />
           <Route path="/admin/services" element={<ProtectedRoute><ManageServices /></ProtectedRoute>} />
           <Route path="/admin/works" element={<ProtectedRoute><ManageWorks /></ProtectedRoute>} />
+          <Route path="/admin/news" element={<ProtectedRoute><ManageNews /></ProtectedRoute>} />
           <Route path="/admin/profile" element={<ProtectedRoute><EditProfile /></ProtectedRoute>} />
           <Route path="/admin/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
         </Routes>

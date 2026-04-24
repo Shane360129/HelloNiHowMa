@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
+import ImageField from '../../components/ImageField';
 import { fetchServices, createService, updateService, deleteService } from '../../context/api';
 
 const emptyService = {
-  name: '', subtitle: '', description: '', price: '', duration: '', durationMinutes: 180, image: '', featured: false, order: 0
+  name: '', subtitle: '', description: '', price: '', duration: '', durationMinutes: 210, image: '', featured: false, order: 0
 };
 
 export default function ManageServices() {
@@ -85,20 +86,21 @@ export default function ManageServices() {
                     type="number"
                     min="15"
                     step="15"
-                    value={form.durationMinutes ?? 180}
+                    value={form.durationMinutes ?? 210}
                     onChange={e => update('durationMinutes', Number(e.target.value))}
                   />
-                  <p className="form-hint">實際鎖定行事曆的時間長度，預設 180 分鐘</p>
+                  <p className="form-hint">實際鎖定行事曆的時間長度，預設 210 分鐘（3.5 小時）</p>
                 </div>
                 <div className="form-group">
                   <label>排序</label>
                   <input type="number" value={form.order} onChange={e => update('order', Number(e.target.value))} />
                 </div>
               </div>
-              <div className="form-group">
-                <label>封面圖 URL</label>
-                <input value={form.image} onChange={e => update('image', e.target.value)} />
-              </div>
+              <ImageField
+                label="封面圖"
+                value={form.image}
+                onChange={v => update('image', v)}
+              />
               <div className="form-group checkbox-group">
                 <label>
                   <input type="checkbox" checked={form.featured} onChange={e => update('featured', e.target.checked)} />
