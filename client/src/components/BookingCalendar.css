@@ -144,6 +144,18 @@
 }
 .cal-full .cal-daynum { color: var(--danger); }
 
+.cal-partial-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--white);
+}
+.cal-selected .cal-partial-dot { background: var(--accent); box-shadow: 0 0 0 2px var(--primary-dark); }
+
 .cal-selected {
   background: var(--primary-dark) !important;
   border-color: var(--primary-dark) !important;
@@ -195,22 +207,20 @@
   border: 1px solid var(--border);
 }
 .dot-open { background: var(--white); border-color: var(--primary-light); }
+.dot-partial { background: var(--white); border-color: var(--primary-light); position: relative; }
+.dot-partial::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--danger);
+}
 .dot-full { background: rgba(184, 74, 59, 0.3); border-color: rgba(184, 74, 59, 0.45); }
 .dot-closed { background: var(--bg-alt); border-color: var(--border); }
 
 /* ------- Slots ------- */
-.slots-date-head {
-  padding: 0.7rem 1rem;
-  background: var(--primary-dark);
-  color: var(--white);
-  border-radius: var(--radius);
-  font-family: var(--font-en);
-  letter-spacing: 2px;
-  font-size: 0.95rem;
-  margin-bottom: 0.75rem;
-  text-align: center;
-}
-
 .slots-empty {
   padding: 2.5rem 1rem;
   text-align: center;
@@ -249,6 +259,20 @@
   color: var(--primary-dark);
 }
 .slot-item:hover { border-color: var(--primary-light); background: var(--blush); }
+
+.slot-date-head {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+  color: var(--white);
+  font-family: var(--font-zh);
+  letter-spacing: 1.5px;
+  font-size: 0.92rem;
+  justify-content: center;
+  cursor: default;
+  text-align: center;
+}
+.slot-date-head:hover { background: var(--primary-dark); border-color: var(--primary-dark); }
+.slot-date-head .slot-time { color: var(--white); letter-spacing: 1.5px; }
 
 .slot-item input[type="radio"] {
   position: absolute;

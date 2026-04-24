@@ -1,26 +1,27 @@
 /* ============ CSS Variables ============ */
 :root {
-  --primary: #8B5A3C;
-  --primary-light: #C9A98C;
-  --primary-dark: #4A2E1F;
-  --accent: #D9A577;
-  --blush: #F3E2D4;
-  --text: #2E1F17;
-  --text-light: #7A5F4E;
-  --bg: #FBF5EF;
-  --bg-alt: #F1E3D3;
-  --white: #FFFFFF;
-  --border: #E9D9C7;
+  --primary: #B08968;
+  --primary-light: #D8B694;
+  --primary-dark: #6B4A2D;
+  --accent: #C49A6C;
+  --blush: #F1E1CB;
+  --text: #4A3524;
+  --text-light: #967557;
+  --bg: #F5EADA;
+  --bg-alt: #EBDCC3;
+  --white: #FCF7EE;
+  --border: #DEC8AC;
   --danger: #B84A3B;
   --danger-light: #D85A49;
-  --success: #6B8E5A;
+  --success: #7F9A60;
   --warning: #C99A4C;
-  --shadow: 0 2px 20px rgba(74, 46, 31, 0.08);
-  --shadow-lg: 0 12px 40px rgba(74, 46, 31, 0.15);
+  --shadow: 0 2px 22px rgba(107, 74, 45, 0.08);
+  --shadow-lg: 0 14px 42px rgba(107, 74, 45, 0.14);
   --radius: 10px;
   --radius-lg: 18px;
   --transition: all 0.3s ease;
-  --font-zh: 'Noto Sans TC', 'PingFang TC', sans-serif;
+  --font-zh: 'LXGW WenKai TC', 'Klee One', 'Noto Serif TC', 'PingFang TC', cursive;
+  --font-zh-display: 'Ma Shan Zheng', 'LXGW WenKai TC', cursive;
   --font-en: 'Cormorant Garamond', 'Playfair Display', serif;
 }
 
@@ -848,4 +849,19 @@ input, textarea, select { font-family: inherit; font-size: 1rem; }
   .sidebar-nav a { padding: 0.4rem 0.7rem; font-size: 0.85rem; }
   .sidebar-footer { flex-direction: row; gap: 0.5rem; }
   .admin-main { margin-left: 0; padding: 1.25rem; }
+
+  .container { padding: 0 1rem; }
+  .booking-section { padding: 3rem 0; }
+  .booking-card { padding: 1.25rem 1rem; border-radius: 14px; }
+  .booking-card-title { font-size: 1.25rem; letter-spacing: 2px; }
+  .booking-steps { gap: 0.4rem; }
+  .booking-step { padding: 0.55rem 0.75rem; }
+  .step-label { font-size: 0.82rem; letter-spacing: 1px; }
+  .step-num { width: 22px; height: 22px; font-size: 0.78rem; }
+  .page-header { padding: 5.5rem 0 2rem; }
+  .page-header h1 { font-size: 1.9rem; letter-spacing: 2px; }
+  .hero-title { font-size: 2.4rem; letter-spacing: 2px; }
+  .section-title { font-size: 1.5rem; }
+  .form-row { grid-template-columns: 1fr; }
+  .btn-lg { padding: 0.85rem 1.8rem; font-size: 0.98rem; }
 }

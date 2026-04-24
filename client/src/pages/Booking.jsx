@@ -4,8 +4,8 @@ import Footer from '../components/Footer';
 import BookingCalendar from '../components/BookingCalendar';
 
 const STEPS = [
-  { key: 'info', label: '填寫資訊' },
   { key: 'time', label: '選擇時段' },
+  { key: 'info', label: '填寫資訊' },
   { key: 'done', label: '送出預約' }
 ];
 
@@ -66,8 +66,8 @@ export default function Booking() {
   };
 
   const bookingDisabled = settings && settings.bookingEnabled === false;
-  const activeStep = !form.service || !form.name || !form.phone ? 0
-    : !form.date || !form.time ? 1 : 2;
+  const activeStep = !form.service || !form.date || !form.time ? 0
+    : !form.name || !form.phone ? 1 : 2;
 
   return (
     <div className="page">
@@ -124,9 +124,10 @@ export default function Booking() {
 
               <form onSubmit={handleSubmit} className="booking-form">
                 <div className="booking-card">
-                  <h2 className="booking-card-title">預約資訊</h2>
-
-                  {error && <div className="alert alert-error">{error}</div>}
+                  <h2 className="booking-card-title">挑選時段</h2>
+                  <p className="booking-card-sub">
+                    先選擇預約項目，再從行事曆點選日期；右側會列出可預約的時間，已被預約的時段會打 ✕。
+                  </p>
 
                   <div className="form-group">
                     <label>預約項目 *</label>
@@ -139,6 +140,27 @@ export default function Booking() {
                       ))}
                     </select>
                   </div>
+
+                  <BookingCalendar
+                    service={form.service}
+                    selectedDate={form.date}
+                    selectedTime={form.time}
+                    onPick={handlePick}
+                  />
+                  <div className="chosen-slot">
+                    {form.date && form.time
+                      ? <span><strong>已選：</strong>{form.date}<span className="sep">·</span>{form.time}</span>
+                      : <span className="placeholder">尚未選擇時段</span>}
+                  </div>
+                </div>
+
+                <div className="booking-card">
+                  <h2 className="booking-card-title">聯絡資訊</h2>
+                  <p className="booking-card-sub">
+                    留下聯繫方式，我們會盡快以 LINE 或電話與您確認。
+                  </p>
+
+                  {error && <div className="alert alert-error">{error}</div>}
 
                   <div className="form-row">
                     <div className="form-group">
@@ -164,24 +186,6 @@ export default function Booking() {
                       onChange={e => update('notes', e.target.value)}
                       placeholder="例如：第一次做、希望的眉型風格、膚況特殊狀況等"
                     />
-                  </div>
-                </div>
-
-                <div className="booking-card">
-                  <h2 className="booking-card-title">挑選時段</h2>
-                  <p className="booking-card-sub">
-                    從行事曆點選日期後，右側會列出可預約的時間；已被預約的時段會打 ✕。
-                  </p>
-                  <BookingCalendar
-                    service={form.service}
-                    selectedDate={form.date}
-                    selectedTime={form.time}
-                    onPick={handlePick}
-                  />
-                  <div className="chosen-slot">
-                    {form.date && form.time
-                      ? <span><strong>已選：</strong>{form.date}<span className="sep">·</span>{form.time}</span>
-                      : <span className="placeholder">尚未選擇時段</span>}
                   </div>
                 </div>
 

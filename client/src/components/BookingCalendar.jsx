@@ -109,7 +109,10 @@ export default function BookingCalendar({ service, selectedDate, selectedTime, o
     if (cell.isPast) classes.push('cal-past');
     else if (!cell.isOpen) classes.push('cal-closed');
     else if (cell.available === 0 && cell.total > 0) classes.push('cal-full');
-    else classes.push('cal-available');
+    else {
+      classes.push('cal-available');
+      if (cell.booked > 0) classes.push('cal-partial');
+    }
     if (cell.isToday) classes.push('cal-today');
     if (selectedDate === cell.date) classes.push('cal-selected');
     return classes.join(' ');
@@ -157,6 +160,9 @@ export default function BookingCalendar({ service, selectedDate, selectedTime, o
                   {cell.booked > 0 && cell.available === 0 && (
                     <span className="cal-x" aria-hidden>✕</span>
                   )}
+                  {cell.booked > 0 && cell.available > 0 && (
+                    <span className="cal-partial-dot" aria-hidden />
+                  )}
                 </button>
               );
             })}
@@ -166,6 +172,7 @@ export default function BookingCalendar({ service, selectedDate, selectedTime, o
 
           <div className="cal-legend">
             <span><span className="dot dot-open" /> 可選</span>
+            <span><span className="dot dot-partial" /> 部分時段</span>
             <span><span className="dot dot-full" /> 已滿</span>
             <span><span className="dot dot-closed" /> 公休</span>
           </div>
@@ -178,11 +185,13 @@ export default function BookingCalendar({ service, selectedDate, selectedTime, o
             </div>
           ) : (
             <>
-              <div className="slots-date-head">{selectedDateLabel}</div>
               {loadingDay && <div className="cal-loading">讀取時段中⋯</div>}
               {!loadingDay && dayData && (
                 dayData.isOpen && dayData.slots.length ? (
                   <div className="slots-list">
+                    <div className="slot-item slot-date-head" aria-hidden>
+                      <span className="slot-time">{selectedDateLabel}</span>
+                    </div>
                     {dayData.slots.map(slot => {
                       const isSelected = selectedTime === slot.time;
                       return (

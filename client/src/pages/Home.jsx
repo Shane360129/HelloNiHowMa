@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchProfile, fetchWorks, fetchServices } from '../context/api';
 import Footer from '../components/Footer';
+import HomeScheduleCalendar from '../components/HomeScheduleCalendar';
 
 export default function Home() {
   const [profile, setProfile] = useState(null);
@@ -120,6 +121,18 @@ export default function Home() {
           <div className="center" style={{ marginTop: '2.5rem' }}>
             <Link to="/works" className="btn btn-outline">查看全部作品</Link>
           </div>
+        </div>
+      </section>
+
+      {/* Monthly schedule */}
+      <section className="section section-alt">
+        <div className="container">
+          <div className="center">
+            <div className="eyebrow">Opening Schedule</div>
+            <h2 className="section-title center">本月營業時段</h2>
+            <p className="section-lead">依行事曆挑選喜歡的日期，點選下方「前往線上預約」即可送出預約需求。</p>
+          </div>
+          <HomeScheduleCalendar />
         </div>
       </section>
 
