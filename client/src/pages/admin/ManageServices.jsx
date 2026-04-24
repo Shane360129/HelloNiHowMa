@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
+import ImageField from '../../components/ImageField';
 import { fetchServices, createService, updateService, deleteService } from '../../context/api';
 
 const emptyService = {
@@ -95,10 +96,11 @@ export default function ManageServices() {
                   <input type="number" value={form.order} onChange={e => update('order', Number(e.target.value))} />
                 </div>
               </div>
-              <div className="form-group">
-                <label>封面圖 URL</label>
-                <input value={form.image} onChange={e => update('image', e.target.value)} />
-              </div>
+              <ImageField
+                label="封面圖"
+                value={form.image}
+                onChange={v => update('image', v)}
+              />
               <div className="form-group checkbox-group">
                 <label>
                   <input type="checkbox" checked={form.featured} onChange={e => update('featured', e.target.checked)} />

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
+import ImageField from '../../components/ImageField';
 import { fetchProfile, updateProfile } from '../../context/api';
 
 export default function EditProfile() {
@@ -54,19 +55,33 @@ export default function EditProfile() {
         </div>
 
         <div className="form-group">
-          <label>自我介紹 / 工作室介紹</label>
+          <label>首頁簡介（顯示在首頁上方獨立區塊）</label>
+          <textarea
+            rows={3}
+            value={profile.homeIntro || ''}
+            onChange={e => update('homeIntro', e.target.value)}
+            placeholder="例如：La Paisley 是一間以韓式霧眉與線條眉為主的小型工作室..."
+          />
+          <p className="form-hint">未填寫時，前台會顯示「待補」提示。</p>
+        </div>
+
+        <div className="form-group">
+          <label>自我介紹（About 區塊）</label>
           <textarea rows={4} value={profile.bio || ''} onChange={e => update('bio', e.target.value)} />
         </div>
 
         <div className="form-row">
-          <div className="form-group">
-            <label>About 頁頭像 URL</label>
-            <input value={profile.avatar || ''} onChange={e => update('avatar', e.target.value)} />
-          </div>
-          <div className="form-group">
-            <label>Hero 背景圖 URL</label>
-            <input value={profile.heroImage || ''} onChange={e => update('heroImage', e.target.value)} />
-          </div>
+          <ImageField
+            label="About 頁頭像"
+            value={profile.avatar || ''}
+            onChange={v => update('avatar', v)}
+          />
+          <ImageField
+            label="Hero 背景圖"
+            value={profile.heroImage || ''}
+            onChange={v => update('heroImage', v)}
+            hint="建議 1600x1000 以上的橫幅圖片"
+          />
         </div>
 
         <div className="form-row">

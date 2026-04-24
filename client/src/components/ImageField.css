@@ -1,0 +1,71 @@
+.image-field {
+  margin-bottom: 1.2rem;
+}
+.image-field-label {
+  display: block;
+  font-weight: 500;
+  margin-bottom: 0.4rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+.image-field-row {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.image-preview {
+  width: 130px;
+  height: 130px;
+  flex-shrink: 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.image-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.image-preview-empty {
+  color: var(--text-light);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+.image-preview-placeholder { padding: 0 0.75rem; text-align: center; }
+
+.image-field-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  flex: 1;
+}
+.image-field-link {
+  background: none;
+  border: none;
+  color: var(--text-light);
+  font-size: 0.82rem;
+  letter-spacing: 0.5px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  padding: 0.25rem 0;
+  cursor: pointer;
+}
+.image-field-link:hover { color: var(--primary-dark); }
+.image-url-input {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+}
+.image-field-error {
+  color: var(--danger);
+  font-size: 0.82rem;
+  margin-top: 0.4rem;
+}

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
+import ImageField from '../../components/ImageField';
 import { fetchWorks, createWork, updateWork, deleteWork } from '../../context/api';
 
 const emptyWork = {
@@ -73,14 +74,17 @@ export default function ManageWorks() {
               </div>
 
               <div className="form-row">
-                <div className="form-group">
-                  <label>封面 / 術後 圖片 URL</label>
-                  <input value={form.image} onChange={e => update('image', e.target.value)} required />
-                </div>
-                <div className="form-group">
-                  <label>術前圖片 URL（選填）</label>
-                  <input value={form.beforeImage || ''} onChange={e => update('beforeImage', e.target.value)} />
-                </div>
+                <ImageField
+                  label="封面 / 術後 圖片"
+                  value={form.image}
+                  onChange={v => update('image', v)}
+                  required
+                />
+                <ImageField
+                  label="術前圖片（選填）"
+                  value={form.beforeImage || ''}
+                  onChange={v => update('beforeImage', v)}
+                />
               </div>
 
               <div className="form-group checkbox-group">

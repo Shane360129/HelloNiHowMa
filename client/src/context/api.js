@@ -30,6 +30,10 @@ export async function fetchServices() {
   const res = await fetch(`${API}/api/services`);
   return res.json();
 }
+export async function fetchNews() {
+  const res = await fetch(`${API}/api/news`);
+  return res.json();
+}
 export async function fetchPublicSettings() {
   const res = await fetch(`${API}/api/public-settings`);
   return res.json();
@@ -109,6 +113,35 @@ export async function updateService(id, data) {
 }
 export async function deleteService(id) {
   const res = await fetch(`${API}/api/admin/services/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
+/* Admin: News */
+export async function fetchAdminNews() {
+  const res = await fetch(`${API}/api/admin/news`, { headers: authHeaders() });
+  return handle(res, '載入失敗');
+}
+export async function createNews(data) {
+  const res = await fetch(`${API}/api/admin/news`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '新增失敗');
+}
+export async function updateNews(id, data) {
+  const res = await fetch(`${API}/api/admin/news/${id}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '更新失敗');
+}
+export async function deleteNews(id) {
+  const res = await fetch(`${API}/api/admin/news/${id}`, {
     method: 'DELETE',
     headers: authHeaders()
   });

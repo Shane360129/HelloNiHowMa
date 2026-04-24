@@ -508,6 +508,112 @@ input, textarea, select { font-family: inherit; font-size: 1rem; }
   .booking-card { padding: 1.5rem 1.25rem; }
 }
 
+/* ============ Placeholder & Home Intro ============ */
+.placeholder-card {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.5rem 1.75rem;
+  text-align: center;
+  background: var(--white);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-light);
+  font-size: 0.95rem;
+  letter-spacing: 1px;
+}
+.home-intro-section { padding-bottom: 3rem; }
+.home-intro {
+  max-width: 640px;
+  margin: 0 auto;
+  text-align: center;
+  color: var(--text);
+  font-size: 1.05rem;
+  line-height: 2;
+  white-space: pre-line;
+  letter-spacing: 1px;
+}
+.about-image-placeholder {
+  width: 100%;
+  max-width: 420px;
+  aspect-ratio: 4/5;
+  margin: 0 auto;
+  background: var(--bg-alt);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-light);
+  letter-spacing: 2px;
+}
+
+/* ============ News ============ */
+.news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1.5rem;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+.news-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--white);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: var(--transition);
+  color: inherit;
+}
+a.news-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-lg);
+}
+.news-image {
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--bg-alt);
+}
+.news-image img { width: 100%; height: 100%; object-fit: cover; }
+.news-body { padding: 1.1rem 1.25rem 1.4rem; flex: 1; }
+.news-date {
+  font-family: var(--font-en);
+  font-size: 0.78rem;
+  letter-spacing: 2px;
+  color: var(--text-light);
+  margin-bottom: 0.4rem;
+}
+.news-pin {
+  margin-left: 0.6rem;
+  color: var(--accent);
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  font-family: var(--font-zh);
+}
+.news-title {
+  font-size: 1.1rem;
+  color: var(--primary-dark);
+  margin-bottom: 0.5rem;
+  letter-spacing: 1px;
+}
+.news-content {
+  color: var(--text-light);
+  font-size: 0.92rem;
+  line-height: 1.7;
+  white-space: pre-line;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.news-link {
+  display: inline-block;
+  margin-top: 0.75rem;
+  color: var(--primary-dark);
+  font-size: 0.85rem;
+  letter-spacing: 1px;
+}
+
 /* ============ Schedule Editor ============ */
 .schedule-editor h4 {
   font-size: 0.95rem;

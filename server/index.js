@@ -10,6 +10,7 @@ const Work = require('./models/Work');
 const Service = require('./models/Service');
 const Booking = require('./models/Booking');
 const Setting = require('./models/Setting');
+const News = require('./models/News');
 const { notifyBooking, sendTestMessage } = require('./line');
 const {
   getDayAvailability,
@@ -22,7 +23,7 @@ const PORT = process.env.PORT || 4000;
 const JWT_SECRET = process.env.JWT_SECRET || 'la-paisley-admin-secret-key-2025';
 
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '25mb' }));
 
 async function initAdmin() {
   const existing = await Admin.findOne({ where: { username: 'admin' } });
@@ -67,6 +68,15 @@ app.get('/api/works', async (req, res) => {
 app.get('/api/services', async (req, res) => {
   const services = await Service.findAll({ order: [['order', 'ASC'], ['id', 'ASC']] });
   res.json(services);
+});
+
+app.get('/api/news', async (req, res) => {
+  const items = await News.findAll({
+    where: { published: true },
+    order: [['pinned', 'DESC'], ['publishedAt', 'DESC'], ['id', 'DESC']],
+    limit: 20
+  });
+  res.json(items);
 });
 
 app.get('/api/public-settings', async (req, res) => {
@@ -230,6 +240,32 @@ app.delete('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
   const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
   await booking.destroy();
+  res.json({ message: '已刪除' });
+});
+
+// ============ Admin: News ============
+
+app.get('/api/admin/news', authMiddleware, async (req, res) => {
+  const items = await News.findAll({ order: [['pinned', 'DESC'], ['publishedAt', 'DESC'], ['id', 'DESC']] });
+  res.json(items);
+});
+
+app.post('/api/admin/news', authMiddleware, async (req, res) => {
+  const item = await News.create(req.body);
+  res.status(201).json(item);
+});
+
+app.put('/api/admin/news/:id', authMiddleware, async (req, res) => {
+  const item = await News.findByPk(req.params.id);
+  if (!item) return res.status(404).json({ error: '消息不存在' });
+  await item.update(req.body);
+  res.json(item);
+});
+
+app.delete('/api/admin/news/:id', authMiddleware, async (req, res) => {
+  const item = await News.findByPk(req.params.id);
+  if (!item) return res.status(404).json({ error: '消息不存在' });
+  await item.destroy();
   res.json({ message: '已刪除' });
 });
 
