@@ -1,22 +1,22 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../db');
 
-const workSchema = new mongoose.Schema({
-  title: String,
-  description: String,
-  image: String,
-  beforeImage: String,
-  category: String,
-  featured: { type: Boolean, default: false },
-  createdAt: { type: String, default: () => new Date().toISOString().split('T')[0] }
-});
+const Work = sequelize.define(
+  'Work',
+  {
+    id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    title: { type: DataTypes.STRING, defaultValue: '' },
+    description: { type: DataTypes.TEXT, defaultValue: '' },
+    image: { type: DataTypes.TEXT, defaultValue: '' },
+    beforeImage: { type: DataTypes.TEXT, defaultValue: '' },
+    category: { type: DataTypes.STRING, defaultValue: '' },
+    featured: { type: DataTypes.BOOLEAN, defaultValue: false },
+    createdAt: {
+      type: DataTypes.STRING,
+      defaultValue: () => new Date().toISOString().split('T')[0]
+    }
+  },
+  { tableName: 'works', timestamps: false }
+);
 
-workSchema.set('toJSON', {
-  virtuals: true,
-  transform: (doc, ret) => {
-    ret.id = ret._id.toString();
-    delete ret.__v;
-    return ret;
-  }
-});
-
-module.exports = mongoose.model('Work', workSchema);
+module.exports = Work;
