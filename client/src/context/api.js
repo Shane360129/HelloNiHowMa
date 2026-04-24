@@ -1,12 +1,11 @@
 const API = import.meta.env.VITE_API_URL || '';
 
-export async function fetchProfile() {
-  const res = await fetch(`${API}/api/profile`);
-  return res.json();
-}
-
-export async function fetchWorks() {
-  const res = await fetch(`${API}/api/works`);
+async function handle(res, errMsg) {
+  if (!res.ok) {
+    let body = {};
+    try { body = await res.json(); } catch { /* empty */ }
+    throw new Error(body.error || errMsg);
+  }
   return res.json();
 }
 
@@ -18,54 +17,145 @@ function authHeaders() {
   };
 }
 
+/* Public */
+export async function fetchProfile() {
+  const res = await fetch(`${API}/api/profile`);
+  return res.json();
+}
+export async function fetchWorks() {
+  const res = await fetch(`${API}/api/works`);
+  return res.json();
+}
+export async function fetchServices() {
+  const res = await fetch(`${API}/api/services`);
+  return res.json();
+}
+export async function fetchPublicSettings() {
+  const res = await fetch(`${API}/api/public-settings`);
+  return res.json();
+}
+export async function createBooking(booking) {
+  const res = await fetch(`${API}/api/bookings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(booking)
+  });
+  return handle(res, '預約送出失敗，請稍後再試');
+}
+
+/* Admin: Profile */
 export async function updateProfile(profile) {
   const res = await fetch(`${API}/api/admin/profile`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(profile)
   });
-  if (!res.ok) throw new Error('更新失敗');
-  return res.json();
+  return handle(res, '更新失敗');
 }
 
+/* Admin: Works */
 export async function createWork(work) {
   const res = await fetch(`${API}/api/admin/works`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(work)
   });
-  if (!res.ok) throw new Error('新增失敗');
-  return res.json();
+  return handle(res, '新增失敗');
 }
-
 export async function updateWork(id, work) {
   const res = await fetch(`${API}/api/admin/works/${id}`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify(work)
   });
-  if (!res.ok) throw new Error('更新失敗');
-  return res.json();
+  return handle(res, '更新失敗');
 }
-
 export async function deleteWork(id) {
   const res = await fetch(`${API}/api/admin/works/${id}`, {
     method: 'DELETE',
     headers: authHeaders()
   });
-  if (!res.ok) throw new Error('刪除失敗');
-  return res.json();
+  return handle(res, '刪除失敗');
 }
 
+/* Admin: Services */
+export async function createService(data) {
+  const res = await fetch(`${API}/api/admin/services`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '新增失敗');
+}
+export async function updateService(id, data) {
+  const res = await fetch(`${API}/api/admin/services/${id}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '更新失敗');
+}
+export async function deleteService(id) {
+  const res = await fetch(`${API}/api/admin/services/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
+/* Admin: Bookings */
+export async function fetchBookings(status) {
+  const qs = status ? `?status=${encodeURIComponent(status)}` : '';
+  const res = await fetch(`${API}/api/admin/bookings${qs}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入失敗');
+}
+export async function updateBooking(id, data) {
+  const res = await fetch(`${API}/api/admin/bookings/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '更新失敗');
+}
+export async function deleteBooking(id) {
+  const res = await fetch(`${API}/api/admin/bookings/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
+/* Admin: Settings */
+export async function fetchSettings() {
+  const res = await fetch(`${API}/api/admin/settings`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入失敗');
+}
+export async function updateSettings(data) {
+  const res = await fetch(`${API}/api/admin/settings`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(data)
+  });
+  return handle(res, '儲存失敗');
+}
+export async function sendLineTest() {
+  const res = await fetch(`${API}/api/admin/line/test`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  return handle(res, '測試失敗');
+}
+
+/* Admin: Password */
 export async function changePassword(currentPassword, newPassword) {
   const res = await fetch(`${API}/api/admin/password`, {
     method: 'PUT',
     headers: authHeaders(),
     body: JSON.stringify({ currentPassword, newPassword })
   });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error);
-  }
-  return res.json();
+  return handle(res, '更新失敗');
 }

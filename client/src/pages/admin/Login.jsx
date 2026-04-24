@@ -29,7 +29,7 @@ export default function Login() {
   return (
     <div className="login-page">
       <div className="login-card">
-        <h1>Fragrance Atelier</h1>
+        <h1>La Paisley</h1>
         <p className="subtitle">管理後台登入</p>
         {error && <div className="alert alert-error">{error}</div>}
         <form onSubmit={handleSubmit}>

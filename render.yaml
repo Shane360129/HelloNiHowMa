@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: fragrance-atelier
+    name: la-paisley
     runtime: node
     buildCommand: cd client && npm install --include=dev && npm run build && cd ../server && npm install
     startCommand: npm start
@@ -10,4 +10,10 @@ services:
       - key: JWT_SECRET
         generateValue: true
       - key: MONGODB_URI
+        sync: false
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_TARGET_ID
+        sync: false
+      - key: LINE_NOTIFY_TOKEN
         sync: false

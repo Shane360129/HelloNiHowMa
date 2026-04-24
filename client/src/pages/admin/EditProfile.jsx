@@ -8,19 +8,13 @@ export default function EditProfile() {
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    fetchProfile().then(setProfile);
+    fetchProfile().then(data => setProfile({ social: {}, ...data }));
   }, []);
 
-  const handleChange = (field, value) => {
+  const update = (field, value) =>
     setProfile(prev => ({ ...prev, [field]: value }));
-  };
-
-  const handleSocialChange = (field, value) => {
-    setProfile(prev => ({
-      ...prev,
-      social: { ...prev.social, [field]: value }
-    }));
-  };
+  const updateSocial = (field, value) =>
+    setProfile(prev => ({ ...prev, social: { ...(prev.social || {}), [field]: value } }));
 
   const handleSave = async (e) => {
     e.preventDefault();
@@ -29,8 +23,8 @@ export default function EditProfile() {
     try {
       await updateProfile(profile);
       setMessage('已儲存！');
-    } catch {
-      setMessage('儲存失敗');
+    } catch (err) {
+      setMessage(err.message || '儲存失敗');
     } finally {
       setSaving(false);
     }
@@ -45,54 +39,77 @@ export default function EditProfile() {
       <form onSubmit={handleSave} className="admin-form">
         <div className="form-row">
           <div className="form-group">
-            <label>姓名</label>
-            <input value={profile.name} onChange={e => handleChange('name', e.target.value)} />
+            <label>品牌名稱 / 工作室名</label>
+            <input value={profile.name || ''} onChange={e => update('name', e.target.value)} />
           </div>
           <div className="form-group">
-            <label>頭銜</label>
-            <input value={profile.title} onChange={e => handleChange('title', e.target.value)} />
+            <label>頭銜 / 副標</label>
+            <input value={profile.title || ''} onChange={e => update('title', e.target.value)} />
           </div>
         </div>
 
         <div className="form-group">
-          <label>自我介紹</label>
-          <textarea rows={4} value={profile.bio} onChange={e => handleChange('bio', e.target.value)} />
+          <label>Hero 標語</label>
+          <input value={profile.tagline || ''} onChange={e => update('tagline', e.target.value)} placeholder="一對最適合你的眉，從這裡開始" />
         </div>
 
         <div className="form-group">
-          <label>大頭照 URL</label>
-          <input value={profile.avatar} onChange={e => handleChange('avatar', e.target.value)} />
+          <label>自我介紹 / 工作室介紹</label>
+          <textarea rows={4} value={profile.bio || ''} onChange={e => update('bio', e.target.value)} />
+        </div>
+
+        <div className="form-row">
+          <div className="form-group">
+            <label>About 頁頭像 URL</label>
+            <input value={profile.avatar || ''} onChange={e => update('avatar', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>Hero 背景圖 URL</label>
+            <input value={profile.heroImage || ''} onChange={e => update('heroImage', e.target.value)} />
+          </div>
         </div>
 
         <div className="form-row">
           <div className="form-group">
             <label>Email</label>
-            <input type="email" value={profile.email} onChange={e => handleChange('email', e.target.value)} />
+            <input type="email" value={profile.email || ''} onChange={e => update('email', e.target.value)} />
           </div>
           <div className="form-group">
             <label>電話</label>
-            <input value={profile.phone} onChange={e => handleChange('phone', e.target.value)} />
+            <input value={profile.phone || ''} onChange={e => update('phone', e.target.value)} />
           </div>
         </div>
 
-        <div className="form-group">
-          <label>所在地</label>
-          <input value={profile.location} onChange={e => handleChange('location', e.target.value)} />
+        <div className="form-row">
+          <div className="form-group">
+            <label>所在地（簡述）</label>
+            <input value={profile.location || ''} onChange={e => update('location', e.target.value)} />
+          </div>
+          <div className="form-group">
+            <label>詳細地址（選填）</label>
+            <input value={profile.address || ''} onChange={e => update('address', e.target.value)} />
+          </div>
         </div>
 
         <h3>社群連結</h3>
         <div className="form-row">
           <div className="form-group">
             <label>Instagram</label>
-            <input value={profile.social?.instagram || ''} onChange={e => handleSocialChange('instagram', e.target.value)} />
+            <input value={profile.social?.instagram || ''} onChange={e => updateSocial('instagram', e.target.value)} placeholder="https://instagram.com/la_paisley_2025" />
           </div>
+          <div className="form-group">
+            <label>LINE</label>
+            <input value={profile.social?.line || ''} onChange={e => updateSocial('line', e.target.value)} placeholder="https://line.me/R/ti/p/@xxx" />
+          </div>
+        </div>
+        <div className="form-row">
           <div className="form-group">
             <label>Facebook</label>
-            <input value={profile.social?.facebook || ''} onChange={e => handleSocialChange('facebook', e.target.value)} />
+            <input value={profile.social?.facebook || ''} onChange={e => updateSocial('facebook', e.target.value)} />
           </div>
           <div className="form-group">
-            <label>Line</label>
-            <input value={profile.social?.line || ''} onChange={e => handleSocialChange('line', e.target.value)} />
+            <label>Threads</label>
+            <input value={profile.social?.threads || ''} onChange={e => updateSocial('threads', e.target.value)} />
           </div>
         </div>
 
