@@ -10,7 +10,7 @@ const Service = sequelize.define(
     description: { type: DataTypes.TEXT, defaultValue: '' },
     price: { type: DataTypes.STRING, defaultValue: '' },
     duration: { type: DataTypes.STRING, defaultValue: '' },
-    durationMinutes: { type: DataTypes.INTEGER, defaultValue: 180 },
+    durationMinutes: { type: DataTypes.INTEGER, defaultValue: 210 },
     image: { type: DataTypes.TEXT, defaultValue: '' },
     featured: { type: DataTypes.BOOLEAN, defaultValue: false },
     order: { type: DataTypes.INTEGER, defaultValue: 0 }

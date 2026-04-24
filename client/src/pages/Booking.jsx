@@ -3,6 +3,12 @@ import { fetchProfile, fetchServices, fetchPublicSettings, createBooking } from 
 import Footer from '../components/Footer';
 import BookingCalendar from '../components/BookingCalendar';
 
+const STEPS = [
+  { key: 'info', label: '填寫資訊' },
+  { key: 'time', label: '選擇時段' },
+  { key: 'done', label: '送出預約' }
+];
+
 export default function Booking() {
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
@@ -44,10 +50,9 @@ export default function Booking() {
     e.preventDefault();
     setError('');
     setMessage('');
-    if (!form.date || !form.time) {
-      setError('請於行事曆選擇日期與時段');
-      return;
-    }
+    if (!form.service) { setError('請選擇預約項目'); return; }
+    if (!form.name || !form.phone) { setError('請填寫姓名與聯絡電話'); return; }
+    if (!form.date || !form.time) { setError('請於行事曆選擇日期與時段'); return; }
     setLoading(true);
     try {
       const res = await createBooking(form);
@@ -61,6 +66,8 @@ export default function Booking() {
   };
 
   const bookingDisabled = settings && settings.bookingEnabled === false;
+  const activeStep = !form.service || !form.name || !form.phone ? 0
+    : !form.date || !form.time ? 1 : 2;
 
   return (
     <div className="page">
@@ -98,26 +105,29 @@ export default function Booking() {
               </div>
             </div>
           ) : (
-            <div className="booking-layout">
-              <div className="booking-calendar-col">
-                <BookingCalendar
-                  service={form.service}
-                  selectedDate={form.date}
-                  selectedTime={form.time}
-                  onPick={handlePick}
-                />
-                <p className="cal-footnote">
-                  {settings?.businessHours || '營業時間依實際公告為準'}
-                </p>
-              </div>
+            <div className="booking-flow">
+              <ol className="booking-steps">
+                {STEPS.map((s, i) => (
+                  <li
+                    key={s.key}
+                    className={
+                      'booking-step' +
+                      (i === activeStep ? ' step-active' : '') +
+                      (i < activeStep ? ' step-done' : '')
+                    }
+                  >
+                    <span className="step-num">{i + 1}</span>
+                    <span className="step-label">{s.label}</span>
+                  </li>
+                ))}
+              </ol>
 
-              <div className="booking-wrap booking-form-col">
-                <h2>預約表單</h2>
-                <p className="subtitle">請留下您的聯絡方式，並於左側行事曆挑選時段</p>
+              <form onSubmit={handleSubmit} className="booking-form">
+                <div className="booking-card">
+                  <h2 className="booking-card-title">預約資訊</h2>
 
-                {error && <div className="alert alert-error">{error}</div>}
+                  {error && <div className="alert alert-error">{error}</div>}
 
-                <form onSubmit={handleSubmit}>
                   <div className="form-group">
                     <label>預約項目 *</label>
                     <select value={form.service} onChange={e => update('service', e.target.value)} required>
@@ -128,15 +138,6 @@ export default function Booking() {
                         </option>
                       ))}
                     </select>
-                  </div>
-
-                  <div className="form-group">
-                    <label>已選時段</label>
-                    <div className="chosen-slot">
-                      {form.date && form.time
-                        ? <span><strong>{form.date}</strong><span className="sep">·</span>{form.time}</span>
-                        : <span className="placeholder">尚未選擇，請於左側行事曆點選</span>}
-                    </div>
                   </div>
 
                   <div className="form-row">
@@ -158,18 +159,36 @@ export default function Booking() {
                   <div className="form-group">
                     <label>備註 / 需求</label>
                     <textarea
-                      rows={4}
+                      rows={3}
                       value={form.notes}
                       onChange={e => update('notes', e.target.value)}
                       placeholder="例如：第一次做、希望的眉型風格、膚況特殊狀況等"
                     />
                   </div>
+                </div>
 
-                  <button type="submit" className="btn btn-block btn-lg" disabled={loading}>
-                    {loading ? '送出中...' : '送出預約'}
-                  </button>
-                </form>
-              </div>
+                <div className="booking-card">
+                  <h2 className="booking-card-title">挑選時段</h2>
+                  <p className="booking-card-sub">
+                    從行事曆點選日期後，右側會列出可預約的時間；已被預約的時段會打 ✕。
+                  </p>
+                  <BookingCalendar
+                    service={form.service}
+                    selectedDate={form.date}
+                    selectedTime={form.time}
+                    onPick={handlePick}
+                  />
+                  <div className="chosen-slot">
+                    {form.date && form.time
+                      ? <span><strong>已選：</strong>{form.date}<span className="sep">·</span>{form.time}</span>
+                      : <span className="placeholder">尚未選擇時段</span>}
+                  </div>
+                </div>
+
+                <button type="submit" className="btn btn-block btn-lg" disabled={loading}>
+                  {loading ? '送出中...' : '送出預約'}
+                </button>
+              </form>
             </div>
           )}
         </div>

@@ -21,21 +21,21 @@ const Setting = sequelize.define(
     weeklySchedule: {
       type: DataTypes.TEXT,
       defaultValue: JSON.stringify({
-        0: null,
-        1: [{ start: '11:00', end: '20:00' }],
-        2: [{ start: '11:00', end: '20:00' }],
-        3: [{ start: '11:00', end: '20:00' }],
-        4: [{ start: '11:00', end: '20:00' }],
-        5: [{ start: '11:00', end: '20:00' }],
-        6: [{ start: '11:00', end: '20:00' }]
+        0: [{ start: '09:30', end: '20:00' }],
+        1: [{ start: '09:30', end: '13:00' }],
+        2: [{ start: '09:30', end: '13:00' }],
+        3: [{ start: '09:30', end: '13:00' }],
+        4: [{ start: '09:30', end: '13:00' }],
+        5: [{ start: '09:30', end: '13:00' }],
+        6: [{ start: '09:30', end: '20:00' }]
       })
     },
     dateOverrides: {
       type: DataTypes.TEXT,
       defaultValue: '{}'
     },
-    defaultBookingDuration: { type: DataTypes.INTEGER, defaultValue: 180 },
-    slotInterval: { type: DataTypes.INTEGER, defaultValue: 60 }
+    defaultBookingDuration: { type: DataTypes.INTEGER, defaultValue: 210 },
+    slotInterval: { type: DataTypes.INTEGER, defaultValue: 30 }
   },
   { tableName: 'settings', timestamps: false }
 );

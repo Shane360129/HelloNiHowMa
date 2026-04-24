@@ -230,7 +230,7 @@ export default function ScheduleEditor({ settings, onChange }) {
             type="number"
             min="15"
             step="15"
-            value={settings.defaultBookingDuration ?? 180}
+            value={settings.defaultBookingDuration ?? 210}
             onChange={e => onChange('defaultBookingDuration', Number(e.target.value))}
           />
           <p className="form-hint">服務項目沒指定時長時套用</p>
@@ -241,7 +241,7 @@ export default function ScheduleEditor({ settings, onChange }) {
             type="number"
             min="15"
             step="15"
-            value={settings.slotInterval ?? 60}
+            value={settings.slotInterval ?? 30}
             onChange={e => onChange('slotInterval', Number(e.target.value))}
           />
           <p className="form-hint">行事曆每隔多少分鐘顯示一個時段起點</p>
