@@ -42,6 +42,18 @@ export async function createBooking(booking) {
   });
   return handle(res, '預約送出失敗，請稍後再試');
 }
+export async function fetchMonthAvailability(year, month, service) {
+  const qs = new URLSearchParams({ year, month });
+  if (service) qs.set('service', service);
+  const res = await fetch(`${API}/api/availability/month?${qs.toString()}`);
+  return handle(res, '載入月曆失敗');
+}
+export async function fetchDayAvailability(date, service) {
+  const qs = new URLSearchParams({ date });
+  if (service) qs.set('service', service);
+  const res = await fetch(`${API}/api/availability/day?${qs.toString()}`);
+  return handle(res, '載入時段失敗');
+}
 
 /* Admin: Profile */
 export async function updateProfile(profile) {

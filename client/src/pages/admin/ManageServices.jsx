@@ -3,7 +3,7 @@ import AdminLayout from '../../components/AdminLayout';
 import { fetchServices, createService, updateService, deleteService } from '../../context/api';
 
 const emptyService = {
-  name: '', subtitle: '', description: '', price: '', duration: '', image: '', featured: false, order: 0
+  name: '', subtitle: '', description: '', price: '', duration: '', durationMinutes: 180, image: '', featured: false, order: 0
 };
 
 export default function ManageServices() {
@@ -76,8 +76,19 @@ export default function ManageServices() {
                   <input value={form.price} onChange={e => update('price', e.target.value)} placeholder="NT$ 4,800" />
                 </div>
                 <div className="form-group">
-                  <label>時長</label>
+                  <label>時長顯示文字</label>
                   <input value={form.duration} onChange={e => update('duration', e.target.value)} placeholder="約 150 分鐘" />
+                </div>
+                <div className="form-group">
+                  <label>預約時長（分鐘）</label>
+                  <input
+                    type="number"
+                    min="15"
+                    step="15"
+                    value={form.durationMinutes ?? 180}
+                    onChange={e => update('durationMinutes', Number(e.target.value))}
+                  />
+                  <p className="form-hint">實際鎖定行事曆的時間長度，預設 180 分鐘</p>
                 </div>
                 <div className="form-group">
                   <label>排序</label>

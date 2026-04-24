@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchProfile, fetchServices, fetchPublicSettings, createBooking } from '../context/api';
 import Footer from '../components/Footer';
-
-const todayStr = () => new Date().toISOString().split('T')[0];
+import BookingCalendar from '../components/BookingCalendar';
 
 export default function Booking() {
   const [profile, setProfile] = useState(null);
@@ -33,10 +32,22 @@ export default function Booking() {
 
   const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
+  const handlePick = (date, time) => {
+    setForm(prev => ({
+      ...prev,
+      date,
+      time: time ?? (prev.date === date ? prev.time : '')
+    }));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setMessage('');
+    if (!form.date || !form.time) {
+      setError('請於行事曆選擇日期與時段');
+      return;
+    }
     setLoading(true);
     try {
       const res = await createBooking(form);
@@ -63,36 +74,71 @@ export default function Booking() {
 
       <section className="booking-section">
         <div className="container">
-          <div className="booking-wrap">
-            {bookingDisabled ? (
+          {bookingDisabled ? (
+            <div className="booking-wrap">
               <div className="alert alert-info">
                 目前暫停線上預約，請直接透過 LINE 或電話聯繫我們。
               </div>
-            ) : submitted ? (
-              <>
-                <div className="booking-success">{message}</div>
-                <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>
-                  您也可以透過以下方式與我們聯繫：
+            </div>
+          ) : submitted ? (
+            <div className="booking-wrap">
+              <div className="booking-success">{message}</div>
+              <p style={{ textAlign: 'center', color: 'var(--text-light)' }}>
+                您也可以透過以下方式與我們聯繫：
+              </p>
+              <div style={{ textAlign: 'center', marginTop: '1rem' }}>
+                {profile?.social?.line && (
+                  <a className="btn btn-outline btn-sm" href={profile.social.line} target="_blank" rel="noreferrer">加 LINE</a>
+                )}
+                {profile?.phone && (
+                  <a className="btn btn-outline btn-sm" href={`tel:${profile.phone}`} style={{ marginLeft: '0.5rem' }}>
+                    撥打電話
+                  </a>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="booking-layout">
+              <div className="booking-calendar-col">
+                <BookingCalendar
+                  service={form.service}
+                  selectedDate={form.date}
+                  selectedTime={form.time}
+                  onPick={handlePick}
+                />
+                <p className="cal-footnote">
+                  {settings?.businessHours || '營業時間依實際公告為準'}
                 </p>
-                <div style={{ textAlign: 'center', marginTop: '1rem' }}>
-                  {profile?.social?.line && (
-                    <a className="btn btn-outline btn-sm" href={profile.social.line} target="_blank" rel="noreferrer">加 LINE</a>
-                  )}
-                  {profile?.phone && (
-                    <a className="btn btn-outline btn-sm" href={`tel:${profile.phone}`} style={{ marginLeft: '0.5rem' }}>
-                      撥打電話
-                    </a>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
+              </div>
+
+              <div className="booking-wrap booking-form-col">
                 <h2>預約表單</h2>
-                <p className="subtitle">請留下您的聯絡方式與想預約的時段</p>
+                <p className="subtitle">請留下您的聯絡方式，並於左側行事曆挑選時段</p>
 
                 {error && <div className="alert alert-error">{error}</div>}
 
                 <form onSubmit={handleSubmit}>
+                  <div className="form-group">
+                    <label>預約項目 *</label>
+                    <select value={form.service} onChange={e => update('service', e.target.value)} required>
+                      <option value="" disabled>請選擇服務項目</option>
+                      {services.map(s => (
+                        <option key={s.id} value={s.name}>
+                          {s.name}{s.price ? `（${s.price}）` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="form-group">
+                    <label>已選時段</label>
+                    <div className="chosen-slot">
+                      {form.date && form.time
+                        ? <span><strong>{form.date}</strong><span className="sep">·</span>{form.time}</span>
+                        : <span className="placeholder">尚未選擇，請於左側行事曆點選</span>}
+                    </div>
+                  </div>
+
                   <div className="form-row">
                     <div className="form-group">
                       <label>姓名 *</label>
@@ -110,30 +156,6 @@ export default function Booking() {
                   </div>
 
                   <div className="form-group">
-                    <label>預約項目 *</label>
-                    <select value={form.service} onChange={e => update('service', e.target.value)} required>
-                      <option value="" disabled>請選擇服務項目</option>
-                      {services.map(s => (
-                        <option key={s.id} value={s.name}>
-                          {s.name}{s.price ? `（${s.price}）` : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div className="form-row">
-                    <div className="form-group">
-                      <label>希望日期 *</label>
-                      <input type="date" value={form.date} min={todayStr()} onChange={e => update('date', e.target.value)} required />
-                    </div>
-                    <div className="form-group">
-                      <label>希望時間 *</label>
-                      <input type="time" value={form.time} onChange={e => update('time', e.target.value)} required />
-                      <p className="form-hint">{settings?.businessHours || '營業時間依實際公告為準'}</p>
-                    </div>
-                  </div>
-
-                  <div className="form-group">
                     <label>備註 / 需求</label>
                     <textarea
                       rows={4}
@@ -147,9 +169,9 @@ export default function Booking() {
                     {loading ? '送出中...' : '送出預約'}
                   </button>
                 </form>
-              </>
-            )}
-          </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

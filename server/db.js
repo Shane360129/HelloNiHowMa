@@ -19,7 +19,7 @@ const sequelize = new Sequelize(DATABASE_URL || 'postgres://localhost:5432/la_pa
 async function connectDB() {
   try {
     await sequelize.authenticate();
-    await sequelize.sync();
+    await sequelize.sync({ alter: true });
     console.log('PostgreSQL connected');
   } catch (err) {
     console.error('PostgreSQL connection error:', err.message);
