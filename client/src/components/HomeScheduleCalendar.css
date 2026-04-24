@@ -151,7 +151,7 @@
   text-decoration: none;
 }
 
-.hs-closed { background: rgba(107, 74, 45, 0.035); }
+.hs-closed { background: rgba(168, 129, 88, 0.05); }
 .hs-closed .hs-daynum { color: var(--text-light); }
 .hs-closed-note { color: var(--text-light); font-family: var(--font-zh); font-size: 0.72rem; letter-spacing: 1px; }
 
