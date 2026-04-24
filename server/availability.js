@@ -94,7 +94,7 @@ function bookingToRange(booking, defaultDuration) {
 function computeDaySlots({ dateStr, duration, schedule, bookings, now }) {
   const openRanges = getOpenRanges(dateStr, schedule);
   if (!openRanges.length) {
-    return { isOpen: false, openRanges: [], slots: [], bookings: [] };
+    return { isOpen: false, openRanges: [], slots: [], chainSlots: [], bookings: [] };
   }
 
   const bookedRanges = bookings
@@ -103,6 +103,7 @@ function computeDaySlots({ dateStr, duration, schedule, bookings, now }) {
     .sort((a, b) => a.start - b.start);
 
   const slots = [];
+  const chainSlots = [];
   const interval = Math.max(15, schedule.slotInterval || 60);
   const todayStr = now.toISOString().slice(0, 10);
   const nowMinutes = dateStr === todayStr
@@ -125,12 +126,23 @@ function computeDaySlots({ dateStr, duration, schedule, bookings, now }) {
         reason: past ? 'past' : conflict ? 'booked' : null
       });
     }
+
+    for (let t = rStart; t + duration <= rEnd; t += duration) {
+      const slotEnd = t + duration;
+      const conflict = bookedRanges.find(b => b.start < slotEnd && b.end > t);
+      chainSlots.push({
+        time: minutesToTime(t),
+        endTime: minutesToTime(slotEnd),
+        booked: !!conflict
+      });
+    }
   }
 
   return {
     isOpen: true,
     openRanges,
     slots,
+    chainSlots,
     bookings: bookedRanges.map(b => ({
       time: b.time,
       endTime: minutesToTime(b.end),
@@ -180,6 +192,7 @@ async function getMonthAvailability(year, month, serviceIdentifier) {
       date: dateStr,
       isOpen: d.isOpen,
       openRanges: d.openRanges,
+      chainSlots: d.chainSlots,
       totalSlots: d.slots.length,
       availableSlots: availableCount,
       bookings: d.bookings

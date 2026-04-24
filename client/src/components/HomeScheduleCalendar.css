@@ -126,6 +126,31 @@
   font-family: var(--font-en);
 }
 
+.hs-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-family: var(--font-en);
+  font-size: 0.72rem;
+  color: var(--primary-dark);
+  background: var(--blush);
+  border-radius: 999px;
+  padding: 1px 6px;
+  margin: 1px 0;
+  letter-spacing: 0.2px;
+}
+.hs-slot-booked {
+  color: var(--danger);
+  background: rgba(184, 74, 59, 0.08);
+  text-decoration: line-through;
+  text-decoration-color: rgba(184, 74, 59, 0.5);
+}
+.hs-slot-x {
+  font-size: 0.65rem;
+  color: var(--danger);
+  text-decoration: none;
+}
+
 .hs-closed { background: rgba(107, 74, 45, 0.035); }
 .hs-closed .hs-daynum { color: var(--text-light); }
 .hs-closed-note { color: var(--text-light); font-family: var(--font-zh); font-size: 0.72rem; letter-spacing: 1px; }
