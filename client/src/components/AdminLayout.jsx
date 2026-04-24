@@ -13,15 +13,18 @@ export default function AdminLayout({ children }) {
 
   const links = [
     { path: '/admin/dashboard', label: '總覽' },
-    { path: '/admin/profile', label: '個人資訊' },
+    { path: '/admin/bookings', label: '預約管理' },
+    { path: '/admin/services', label: '服務項目' },
     { path: '/admin/works', label: '作品管理' },
+    { path: '/admin/profile', label: '個人資訊' },
+    { path: '/admin/settings', label: '系統設定' }
   ];
 
   return (
     <div className="admin-layout">
       <aside className="admin-sidebar">
         <div className="sidebar-header">
-          <Link to="/" className="logo">Fragrance</Link>
+          <Link to="/" className="logo">La <span className="logo-accent">Paisley</span></Link>
           <span className="badge">管理後台</span>
         </div>
         <nav className="sidebar-nav">
@@ -36,8 +39,8 @@ export default function AdminLayout({ children }) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <Link to="/" className="btn btn-outline btn-block">前往前台</Link>
-          <button onClick={handleLogout} className="btn btn-danger btn-block">登出</button>
+          <Link to="/" className="btn btn-outline btn-sm btn-block">前往前台</Link>
+          <button onClick={handleLogout} className="btn btn-danger btn-sm btn-block">登出</button>
         </div>
       </aside>
       <main className="admin-main">

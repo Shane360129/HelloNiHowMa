@@ -1,7 +1,7 @@
 {
-  "name": "fragrance-atelier",
+  "name": "la-paisley",
   "version": "1.0.0",
-  "description": "Fragrance Atelier - 香氛工作室網站",
+  "description": "La Paisley - 霧眉美業工作室預約網站",
   "scripts": {
     "postinstall": "cd client && npm install && cd ../server && npm install",
     "install:all": "cd client && npm install && cd ../server && npm install",
@@ -9,6 +9,7 @@
     "start": "cd server && node index.js",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && node index.js",
+    "seed": "cd server && node seed.js",
     "render-build": "cd client && npm install --include=dev && npm run build && cd ../server && npm install"
   },
   "author": "Shane",

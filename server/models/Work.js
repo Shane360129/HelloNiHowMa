@@ -4,12 +4,8 @@ const workSchema = new mongoose.Schema({
   title: String,
   description: String,
   image: String,
+  beforeImage: String,
   category: String,
-  notes: {
-    top: String,
-    middle: String,
-    base: String
-  },
   featured: { type: Boolean, default: false },
   createdAt: { type: String, default: () => new Date().toISOString().split('T')[0] }
 });
