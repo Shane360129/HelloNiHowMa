@@ -12,11 +12,6 @@ const MONTH_LABELS_EN = [
 function pad(n) { return String(n).padStart(2, '0'); }
 function mondayFirstIndex(sundayIndex) { return (sundayIndex + 6) % 7; }
 
-function formatRanges(ranges) {
-  if (!ranges || !ranges.length) return null;
-  return ranges.map(r => `${r.start}–${r.end}`);
-}
-
 export default function HomeScheduleCalendar() {
   const [cursor, setCursor] = useState(() => {
     const d = new Date();
@@ -54,7 +49,7 @@ export default function HomeScheduleCalendar() {
           date: dateStr,
           dayNum,
           isOpen: info?.isOpen ?? false,
-          ranges: formatRanges(info?.openRanges),
+          chainSlots: info?.chainSlots || [],
           available: info?.availableSlots ?? 0,
           total: info?.totalSlots ?? 0
         });
@@ -89,19 +84,25 @@ export default function HomeScheduleCalendar() {
         <div className="hs-grid">
           {cells.map((cell, i) => {
             if (cell.empty) return <div key={i} className="hs-cell hs-empty" />;
-            const full = cell.isOpen && cell.total > 0 && cell.available === 0;
+            const full = cell.isOpen && cell.chainSlots.length > 0 && cell.chainSlots.every(s => s.booked);
             return (
               <div key={cell.date} className={`hs-cell${cell.isOpen ? '' : ' hs-closed'}${full ? ' hs-full' : ''}`}>
                 <span className="hs-daynum">{cell.dayNum}</span>
                 {!cell.isOpen ? (
                   <span className="hs-note hs-closed-note">公休</span>
-                ) : full ? (
-                  <span className="hs-note hs-full-note">額滿</span>
-                ) : cell.ranges ? (
-                  cell.ranges.map((r, idx) => (
-                    <span key={idx} className="hs-note">{r}</span>
+                ) : cell.chainSlots.length === 0 ? (
+                  <span className="hs-note hs-closed-note">—</span>
+                ) : (
+                  cell.chainSlots.map(slot => (
+                    <span
+                      key={slot.time}
+                      className={`hs-slot${slot.booked ? ' hs-slot-booked' : ''}`}
+                    >
+                      {slot.time}
+                      {slot.booked && <span className="hs-slot-x">✕</span>}
+                    </span>
                   ))
-                ) : null}
+                )}
               </div>
             );
           })}
