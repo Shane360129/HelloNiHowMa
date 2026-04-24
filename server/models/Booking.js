@@ -11,6 +11,7 @@ const Booking = sequelize.define(
     service: { type: DataTypes.STRING, allowNull: false },
     date: { type: DataTypes.STRING, allowNull: false },
     time: { type: DataTypes.STRING, allowNull: false },
+    durationMinutes: { type: DataTypes.INTEGER, defaultValue: 180 },
     notes: { type: DataTypes.TEXT, defaultValue: '' },
     status: {
       type: DataTypes.ENUM('pending', 'confirmed', 'completed', 'cancelled'),

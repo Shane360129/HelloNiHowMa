@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import AdminLayout from '../../components/AdminLayout';
+import ScheduleEditor from '../../components/ScheduleEditor';
 import { fetchSettings, updateSettings, sendLineTest, changePassword } from '../../context/api';
 
 export default function Settings() {
@@ -96,6 +97,9 @@ export default function Settings() {
             開啟線上預約（取消勾選則暫停接受新預約）
           </label>
         </div>
+
+        <h3>預約時段設定</h3>
+        <ScheduleEditor settings={settings} onChange={update} />
 
         <h3>LINE 通知</h3>
         <div className="alert alert-info" style={{ marginTop: 0 }}>

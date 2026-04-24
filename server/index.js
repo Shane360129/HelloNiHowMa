@@ -11,6 +11,11 @@ const Service = require('./models/Service');
 const Booking = require('./models/Booking');
 const Setting = require('./models/Setting');
 const { notifyBooking, sendTestMessage } = require('./line');
+const {
+  getDayAvailability,
+  getMonthAvailability,
+  validateBookingSlot
+} = require('./availability');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -75,24 +80,48 @@ app.get('/api/public-settings', async (req, res) => {
   });
 });
 
-app.post('/api/bookings', async (req, res) => {
-  const settings = await Setting.findOne();
-  if (settings && settings.bookingEnabled === false) {
-    return res.status(400).json({ error: '目前暫停線上預約，請透過 LINE 或電話聯繫我們' });
+app.get('/api/availability/month', async (req, res) => {
+  const year = Number(req.query.year);
+  const month = Number(req.query.month);
+  if (!year || !month || month < 1 || month > 12) {
+    return res.status(400).json({ error: '請提供有效的 year 與 month' });
   }
+  const data = await getMonthAvailability(year, month, req.query.service);
+  res.json(data);
+});
 
+app.get('/api/availability/day', async (req, res) => {
+  const date = String(req.query.date || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return res.status(400).json({ error: '請提供 YYYY-MM-DD 格式的日期' });
+  }
+  const data = await getDayAvailability(date, req.query.service);
+  res.json(data);
+});
+
+app.post('/api/bookings', async (req, res) => {
   const { name, phone, lineId, service, date, time, notes } = req.body || {};
   if (!name || !phone || !service || !date || !time) {
     return res.status(400).json({ error: '請完整填寫姓名、電話、項目、日期與時間' });
+  }
+
+  const dateStr = String(date).trim();
+  const timeStr = String(time).trim();
+  const serviceStr = String(service).trim();
+
+  const check = await validateBookingSlot({ date: dateStr, time: timeStr, service: serviceStr });
+  if (!check.ok) {
+    return res.status(400).json({ error: check.error });
   }
 
   const booking = await Booking.create({
     name: String(name).trim(),
     phone: String(phone).trim(),
     lineId: lineId ? String(lineId).trim() : '',
-    service: String(service).trim(),
-    date: String(date).trim(),
-    time: String(time).trim(),
+    service: serviceStr,
+    date: dateStr,
+    time: timeStr,
+    durationMinutes: check.duration,
     notes: notes ? String(notes).trim() : ''
   });
 
