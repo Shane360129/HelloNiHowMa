@@ -1,6 +1,6 @@
 # La Paisley 雲端部署 + LINE 生態整合規格書
 
-> **版本**：v1.0 (Draft)
+> **版本**：v1.1 (Draft)
 > **撰寫日期**：2026-05-11
 > **作者**：Shane / Claude
 > **狀態**：待 Shane 審閱
@@ -190,21 +190,35 @@
     name:             STRING NOT NULL,
     phone:            STRING NOT NULL,
     lineId:           STRING DEFAULT '',
-+   userId:           INTEGER NULL FK -> users.id,  // 登入用戶綁定
++   userId:           INTEGER NULL FK -> users.id,    // 登入客戶綁定，可空
     service:          STRING NOT NULL,
     date:             STRING NOT NULL,
     time:             STRING NOT NULL,
     durationMinutes:  INTEGER DEFAULT 210,
-    notes:            TEXT,
+    notes:            TEXT,                            // 客戶填寫的備註
++   internalNotes:    TEXT DEFAULT '',                  // 內部備註，僅後台可見
     status:           ENUM('pending','confirmed','completed','cancelled'),
-+   reminderSentAt:   DATE NULL,            // 已發送提醒的時間戳記
++   source:           ENUM('customer_self','admin_phone','admin_dm','walk_in')
++                     DEFAULT 'customer_self',         // 預約來源
++   createdByAdminId: INTEGER NULL FK -> admins.id,   // 若由後台建立，記錄管理員
++   reminderSentAt:   DATE NULL,                       // 已發送提醒時間
     createdAt:        DATE
   }
 ```
 
 **索引**：
 - `INDEX` on `userId`（查我的預約用）
-- `INDEX` on `(date, status)`（cron job 撈待提醒清單用）
+- `INDEX` on `(date, status)`（cron job 撈待提醒清單）
+- `INDEX` on `source`（後台統計來源分布）
+- `INDEX` on `phone`（同電話客戶歷史查詢）
+
+**`source` 欄位語意**：
+| 值 | 來源 | 是否推播 LINE 給客戶 |
+|----|------|----------------------|
+| `customer_self` | 客戶自己用網站/LIFF 預約 | ✅ 是 |
+| `admin_phone` | 後台電話預約 | ❌ 否（除非有 LINE userId） |
+| `admin_dm` | 後台 LINE 私訊預約 | ✅ 若有 userId |
+| `walk_in` | 走入店面當場預約 | ❌ 否 |
 
 ### 4.3 新增 `line_webhook_events` 表（稽核 + 防重）
 
@@ -222,7 +236,115 @@
 
 **用途**：避免 LINE 重送導致重複處理；管理員 debug 時可查 raw payload。
 
-### 4.4 移除欄位
+### 4.4 新增 `message_templates` 表（LINE 訊息模板）
+
+```js
+{
+  id:           INTEGER PK AUTO_INCREMENT,
+  key:          STRING UNIQUE NOT NULL,    // 'booking_created_customer' 等
+  name:         STRING NOT NULL,            // 後台顯示用名稱
+  description:  STRING DEFAULT '',
+  enabled:      BOOLEAN DEFAULT true,
+  channel:      ENUM('line_text','line_flex') DEFAULT 'line_text',
+  content:      TEXT NOT NULL,              // {變數} 格式
+  flexJson:     JSONB NULL,                 // 若為 flex，存 JSON 範本
+  variables:    JSONB DEFAULT '[]',         // 可用變數清單（提示用）
+  updatedBy:    STRING,
+  updatedAt:    DATE,
+  createdAt:    DATE
+}
+```
+
+**預設 seed 的模板 key**：
+
+| Key | 觸發時機 | 收件對象 | 啟用 |
+|-----|----------|----------|------|
+| `booking_created_customer` | 預約成立 | 客戶 | ✅ |
+| `booking_created_store` | 預約成立 | 店家 | ✅ |
+| `booking_confirmed_customer` | 店家標記確認 | 客戶 | ✅ |
+| `booking_completed_customer` | 服務完成 | 客戶 | ⬜ |
+| `booking_cancelled_customer` | 預約取消 | 客戶 | ✅ |
+| `booking_reminder_d1` | 預約前一天 10:00 | 客戶 | ✅ |
+| `booking_reminder_h3` | 預約前 3 小時 | 客戶 | ⬜ |
+| `oa_welcome` | 新追蹤者加入 | 客戶 | ✅ |
+
+**可用變數**：
+`{name}`, `{date}`, `{time}`, `{endTime}`, `{service}`, `{phone}`, `{notes}`, `{duration}`, `{storeName}`, `{storeAddress}`, `{storePhone}`, `{cancelUrl}`, `{rescheduleUrl}`
+
+### 4.5 新增 `broadcasts` 表（推播歷史）
+
+```js
+{
+  id:                BIGINT PK AUTO_INCREMENT,
+  type:              ENUM('single','tag','all_followers') NOT NULL,
+  recipientUserIds:  JSONB DEFAULT '[]',    // 目標 user.id 陣列
+  recipientTags:     JSONB DEFAULT '[]',    // 若 type=tag
+  messageType:       ENUM('text','flex','image') DEFAULT 'text',
+  content:           TEXT NOT NULL,
+  flexJson:          JSONB NULL,
+  imageUrl:          STRING DEFAULT '',
+  scheduledAt:       DATE NULL,             // 排程發送時間
+  status:            ENUM('draft','queued','sending','sent','failed','cancelled')
+                     DEFAULT 'draft',
+  successCount:      INTEGER DEFAULT 0,
+  failureCount:      INTEGER DEFAULT 0,
+  failureDetails:    JSONB DEFAULT '[]',    // [{userId, error}]
+  sentBy:            STRING NOT NULL,        // admin username
+  sentAt:            DATE NULL,
+  createdAt:         DATE
+}
+```
+
+**索引**：
+- `INDEX` on `(status, scheduledAt)`（cron 撈待發清單）
+- `INDEX` on `sentBy`
+
+### 4.6 新增 `admin_audit_logs` 表（操作稽核）
+
+```js
+{
+  id:           BIGINT PK AUTO_INCREMENT,
+  adminId:      INTEGER FK -> admins.id,
+  action:       STRING NOT NULL,    // 'booking.create' 'broadcast.send' ...
+  targetType:   STRING,              // 'Booking' 'Service' 'User'
+  targetId:     STRING,
+  diff:         JSONB DEFAULT '{}',  // 變更前後對照（選填）
+  ip:           STRING,
+  userAgent:    STRING,
+  createdAt:    DATE
+}
+```
+
+**索引**：
+- `INDEX` on `(adminId, createdAt)`
+- `INDEX` on `(targetType, targetId)`
+
+### 4.7 擴充 `users` 表
+
+```diff
+  {
+    ...（原欄位）
++   tags:         JSONB DEFAULT '[]',     // ['VIP','新客','黑名單'...] 自訂標籤
++   notes:        TEXT DEFAULT '',         // 管理員備註
++   blocked:      BOOLEAN DEFAULT false,   // 黑名單（禁止預約）
+  }
+```
+
+### 4.8 擴充 `settings` 表（預約規則）
+
+```diff
+  {
+    ...（原欄位）
++   bookingBufferMinutes:    INTEGER DEFAULT 0,    // 每筆預約前後緩衝
++   bookingEarliestDays:     INTEGER DEFAULT 1,    // 最早可預約幾天後
++   bookingLatestHours:      INTEGER DEFAULT 24,   // 最晚可預約幾小時前
++   bookingCancelHoursLimit: INTEGER DEFAULT 24,   // 距預約 N 小時內不可取消
++   bookingPerUserPerWeek:   INTEGER DEFAULT 0,    // 0=不限
++   lineLoginRequired:       BOOLEAN DEFAULT true, // 是否強制 LINE 登入才能預約
+  }
+```
+
+### 4.9 移除欄位
 
 `settings.lineNotifyToken` — LINE Notify 已於 2025/3 終止，移除相關欄位與程式碼。
 
@@ -333,17 +455,204 @@ LIFF 內取得 server JWT。
 
 **Response**：必須 200 回應 LINE，否則會被視為失敗並重試。
 
-### 5.4 管理員 API
+### 5.4 管理員 API（原有）
 
-新增：
+維持現行 admin API（services / works / news / profile / bookings CRUD）並擴充以下：
+
+### 5.5 管理員 — 預約進階
+
+#### `POST /api/admin/bookings`（新增）
+**用途**：管理員代客建立預約（電話 / 私訊 / 走入）。
+
+**Headers**：`Authorization: Bearer <admin_jwt>`
+**Body**：
+```json
+{
+  "name": "王小姐",
+  "phone": "0912345678",
+  "lineId": "",
+  "service": "韓式霧眉",
+  "date": "2026-06-01",
+  "time": "10:00",
+  "durationMinutes": 210,
+  "notes": "",
+  "internalNotes": "老客戶介紹",
+  "source": "admin_phone",
+  "userId": null,
+  "ignoreConflict": false,
+  "notifyCustomer": false
+}
+```
+
+**處理邏輯**：
+1. 驗證 admin JWT
+2. 若 `ignoreConflict=false`，跑 `validateBookingSlot()`；否則跳過
+3. 若提供 `userId`，自動帶入該用戶的 LINE userId
+4. 建立 booking，記錄 `createdByAdminId`
+5. 若 `notifyCustomer=true` 且有 LINE userId：推播 `booking_created_customer` 模板
+6. 一律推 `booking_created_store` 給店家
+7. 記錄 audit log
+
+#### `PATCH /api/admin/bookings/:id/notify`（新增）
+重新發送預約通知（修改後重發、漏發補發）。
+
+**Body**：`{ "templateKey": "booking_confirmed_customer" }`
+
+#### `POST /api/admin/bookings/bulk-status`（新增）
+批次更新預約狀態。
+
+**Body**：`{ "ids": [1,2,3], "status": "completed" }`
+
+#### `GET /api/admin/bookings/calendar`（新增）
+回傳月曆檢視所需資料（含時段、衝突警告、來源 badge）。
+
+### 5.6 管理員 — 訊息模板
+
+#### `GET /api/admin/message-templates`
+列出所有模板。
+
+#### `GET /api/admin/message-templates/:key`
+取得單一模板（含可用變數清單）。
+
+#### `PUT /api/admin/message-templates/:key`
+更新模板內容 / 啟用狀態。
+
+**Body**：
+```json
+{
+  "enabled": true,
+  "channel": "line_text",
+  "content": "{name} 您好，您的 {service} 已預約成功 ✨\n日期：{date} {time}",
+  "flexJson": null
+}
+```
+
+#### `POST /api/admin/message-templates/:key/preview`
+**用途**：用範例資料渲染模板，預覽實際送出的內容。
+**Body**：`{ "sampleData": { "name": "王小姐", "date": "2026-06-01", ... } }`
+**Response**：`{ "rendered": "王小姐 您好，..." }`
+
+### 5.7 管理員 — 主動推播
+
+#### `POST /api/admin/broadcasts`
+**用途**：建立並發送（或排程）推播。
+
+**Body**：
+```json
+{
+  "type": "tag",
+  "recipientTags": ["VIP"],
+  "messageType": "text",
+  "content": "夏季新優惠來囉 ✨",
+  "scheduledAt": null
+}
+```
+
+**處理邏輯**：
+1. 解析 `type`：`single` → 用 `recipientUserIds`；`tag` → 撈出有對應 tag 的 user；`all_followers` → 撈 `isFollowingOA=true` 全部
+2. 若 `scheduledAt` 為空 → 立即發送；否則寫入 broadcasts 表 status=queued
+3. 對每位收件人呼叫 LINE Messaging API push
+4. 統計 success/failure
+5. 寫入 broadcasts 表
+6. 記錄 audit log
+
+**Response**：`{ id, successCount, failureCount, status }`
+
+#### `GET /api/admin/broadcasts`
+推播歷史列表。
+
+#### `GET /api/admin/broadcasts/:id`
+單筆詳情（含失敗清單）。
+
+#### `POST /api/admin/broadcasts/:id/retry-failed`
+重試失敗筆。
+
+#### `DELETE /api/admin/broadcasts/:id`
+取消尚未發送的排程推播（status=queued 才能刪）。
+
+#### `GET /api/admin/line/quota`
+LINE Messaging API 配額查詢。
+
+**Response**：
+```json
+{
+  "type": "limited",
+  "quota": 500,
+  "consumption": 123,
+  "remaining": 377,
+  "resetDate": "2026-06-01"
+}
+```
+
+### 5.8 管理員 — 用戶管理
 
 #### `GET /api/admin/users`
-列出所有註冊用戶（含預約次數統計）。
+列出所有 LINE 註冊用戶。
+**Query**：`?tag=VIP&search=王&isFollowing=true&page=1&pageSize=20`
+**Response**：含每位用戶的預約次數、最後預約日、是否追蹤 OA。
+
+#### `GET /api/admin/users/:id`
+單一用戶詳情，含歷史預約、推播紀錄。
+
+#### `PATCH /api/admin/users/:id`
+更新用戶資訊（phone、tags、notes、blocked）。
 
 #### `POST /api/admin/users/:id/message`
-管理員透過後台主動推訊息給單一用戶。
+單發 LINE 訊息給該用戶（內部呼叫 broadcasts 流程，type=single）。
 
-其餘 admin API 不變。
+### 5.9 管理員 — 預約時間/規則
+
+#### `GET /api/admin/availability`
+**Response**：
+```json
+{
+  "weeklySchedule": { "0": [...], "1": [...], ... },
+  "dateOverrides": { "2026-06-15": [] },
+  "rules": {
+    "defaultBookingDuration": 210,
+    "slotInterval": 30,
+    "bufferMinutes": 0,
+    "earliestDays": 1,
+    "latestHours": 24,
+    "cancelHoursLimit": 24,
+    "perUserPerWeek": 0
+  }
+}
+```
+
+#### `PUT /api/admin/availability`
+一次性更新所有預約時間/規則設定。
+
+#### `POST /api/admin/availability/block-slot`
+封鎖單一日期的特定時段（不影響其他天的同時段）。
+**Body**：`{ "date": "2026-06-15", "start": "13:00", "end": "15:00", "reason": "教育訓練" }`
+
+### 5.10 管理員 — 內容管理（原有 + 新增）
+
+維持現有 services / works / news / profile CRUD，新增：
+
+#### `POST /api/admin/uploads`
+**用途**：圖片上傳（hero、頭像、作品、消息圖）。
+**實作**：暫存於 Supabase Storage 或回傳 base64（v1.0 用 base64 簡化）。
+
+#### `GET /api/admin/site-content`
+一次拿到所有前台呈現的內容（給 Dashboard 預覽用）。
+
+### 5.11 管理員 — 統計儀表板
+
+#### `GET /api/admin/dashboard/stats`
+**Response**：
+```json
+{
+  "today": { "bookings": 3, "pending": 1 },
+  "thisWeek": { "bookings": 12, "revenue": 58000 },
+  "thisMonth": { "bookings": 45, "newUsers": 8 },
+  "lineHealth": {
+    "lastWebhookAt": "2026-05-11T08:00:00Z",
+    "pushQuotaRemaining": 377
+  }
+}
+```
 
 ---
 
@@ -422,6 +731,119 @@ LIFF 內取得 server JWT。
 - 列表顯示：日期時間、服務、狀態 badge
 - 點開可看詳情、取消（符合條件時）
 - 切換 tab：未完成 / 已完成 / 已取消
+
+### 6.5 後台代客預約流程
+
+```
+[後台 → 預約管理]
+     │
+     ▼
+[點「+ 新增預約」]
+     │
+     ▼
+┌────────────────────────────────────┐
+│  Drawer 表單                       │
+│  ──────────────────────────────   │
+│  來源 *  [電話 ▼ 私訊 走入]        │
+│  姓名 *  [_____________]           │
+│  電話 *  [_____________]           │
+│  ▶ 同電話客戶歷史: 3 筆 (展開)    │
+│  LINE ID  [選填]                   │
+│  └ 或從已註冊用戶選: [搜尋 ▼]      │
+│  服務 *  [韓式霧眉 ▼]              │
+│  日期 *  [行事曆]                  │
+│  時間 *  [可預約時段 ▼]            │
+│  ⚠ 此時段已被預約: ☐ 仍要建立     │
+│  客戶備註  [_______________]       │
+│  內部備註  [_______________]       │
+│  ☐ 自動推播 LINE 確認（需 userId） │
+│  [取消]  [建立並通知 ✓]            │
+└────────────────────────────────────┘
+     │
+     ▼
+[POST /api/admin/bookings]
+     │
+     ▼
+[Toast: 預約已建立 + 已推播店家]
+     │
+     ▼
+[列表自動 refresh]
+```
+
+### 6.6 後台訊息模板編輯流程
+
+```
+[後台 → LINE 設定 → 訊息模板]
+     │
+     ▼
+[列表顯示所有 template]
+[預約成立(客)] ✅ 啟用    [編輯]
+[預約成立(店)] ✅ 啟用    [編輯]
+[已確認(客)]   ✅ 啟用    [編輯]
+[完成(客)]     ⬜ 停用    [編輯]
+...
+     │
+     ▼
+[點編輯 → Modal]
+┌────────────────────────────────────┐
+│  Key: booking_created_customer     │
+│  類型: ●純文字 ○Flex Message       │
+│  啟用: ●是 ○否                     │
+│                                    │
+│  內容（左右並排）                  │
+│  ┌───────────┐  ┌─────────────┐   │
+│  │ 編輯區     │  │ 即時預覽    │   │
+│  │ {name} 您好│  │ 王小姐 您好 │   │
+│  │ 您的{service}預約已成立     │   │
+│  │ 日期：{date} {time}         │   │
+│  │            │  │ 日期: 2026-..│   │
+│  └───────────┘  └─────────────┘   │
+│                                    │
+│  可用變數: {name} {date} {time} ...│
+│  (點擊插入)                        │
+│                                    │
+│  [取消]  [儲存]                    │
+└────────────────────────────────────┘
+```
+
+### 6.7 後台主動推播流程
+
+```
+[後台 → LINE 設定 → 主動推播]
+     │
+     ▼
+[新增推播]
+┌────────────────────────────────────┐
+│  對象選擇:                         │
+│    ● 單一用戶 [搜尋用戶 ▼]         │
+│    ○ 標籤群組 [VIP ▼] (8 人)       │
+│    ○ 全體追蹤者 (124 人)           │
+│                                    │
+│  訊息類型:                         │
+│    ● 純文字  ○ Flex  ○ 圖片        │
+│                                    │
+│  內容:                             │
+│  [_________________________]       │
+│                                    │
+│  排程:                             │
+│    ● 立即發送                      │
+│    ○ 排程 [日期 ___] [時間 __]    │
+│                                    │
+│  ⚠ 本月剩餘配額: 377 / 500        │
+│  本次將消耗: 8 則                  │
+│                                    │
+│  [取消]  [預覽]  [確認發送]        │
+└────────────────────────────────────┘
+     │
+     ▼
+[二次確認 Modal]
+     │
+     ▼
+[POST /api/admin/broadcasts → 立即執行]
+     │
+     ▼
+[結果頁: 成功 7, 失敗 1 (點開看原因)]
+```
 
 ---
 
@@ -641,10 +1063,13 @@ LINE 提供 [LIFF Inspector](https://developers.line.biz/en/docs/liff/use-liff-i
 |-------|------|----------|
 | **Phase 1** | 部署整備：移除 LINE Notify、修補安全漏洞、Supabase 連線、Health Check | 1-2 天 |
 | **Phase 2** | LINE Login：User model、OAuth flow、JWT、我的預約頁 | 3-4 天 |
+| **Phase 2.5** | 後台代客預約 + 用戶管理 + 預約規則擴充 + 月曆檢視 | 3-4 天 |
 | **Phase 3** | LIFF 整合：LIFF SDK、Rich Menu 圖片與設定 | 1-2 天 |
 | **Phase 4** | Messaging API：Webhook、機器人指令、Flex Message、自動提醒 Cron | 3-4 天 |
-| **Phase 5** | 測試 + 部署 + 網域綁定 + 上線監控 | 2 天 |
-| **合計** | | **10-14 天** |
+| **Phase 4.5** | 後台訊息模板系統 + 主動推播 + 推播歷史 + 配額監控 | 3-4 天 |
+| **Phase 4.7** | 後台 Dashboard 統計 + 稽核日誌 + Rich Menu 上傳 | 2-3 天 |
+| **Phase 5** | 整合測試 + 部署 + 網域綁定 + 上線監控 | 2-3 天 |
+| **合計** | | **18-26 天** |
 
 ---
 
@@ -686,13 +1111,212 @@ Phase 1 ─▶ Phase 2 ─▶ Phase 3 ─▶ Phase 4 ─▶ Phase 5
 
 ---
 
-## 16. 待 Shane 確認事項
+## 16. 後台管理功能完整地圖
 
+> 此章節為 **店家自主性檢核表**：所有前台呈現、預約規則、訊息溝通都應能由後台自行設定，不需開發者介入。
+
+### 16.1 Dashboard（後台首頁）
+
+| 區塊 | 內容 |
+|------|------|
+| 今日預約 | 列表 + 一鍵狀態更新（待確認 → 已確認 / 已完成 / 已取消） |
+| 待辦紅點 | 未確認預約數、待回覆訊息數 |
+| 本週/本月統計 | 預約筆數、預估收入、新註冊用戶、各服務佔比 |
+| 系統健康 | LINE Webhook 最後事件時間、本月推播配額、DB 連線狀態 |
+| 最新消息 | 最後一筆 Webhook event、最近 broadcast 結果 |
+| 快速連結 | 跳轉至各管理頁 |
+
+### 16.2 內容管理（前台呈現）
+
+| 區塊 | 可編輯欄位 | 對應前台位置 |
+|------|-----------|--------------|
+| 個人資訊 | 名稱、Tagline、Bio、頭像、Hero 圖、Email、電話、地址、IG/FB/LINE/Threads | Home Hero / About / Footer |
+| 首頁簡介 | `homeIntro`（多行文字） | Home 「關於這裡」 |
+| 服務項目 | 名稱、副標、描述、價格、時長、圖、精選、排序 | Services 頁 / Home 精選 |
+| 作品集 | 標題、描述、圖、分類、精選、建立日期 | Works 頁 / Home 精選 |
+| 最新消息 | 標題、圖片、內文、外連、上架、置頂、發布時間 | Home News / Footer 入口 |
+| Footer | 聯絡、社群、版權 | 全站 Footer |
+| SEO Meta（v2） | Title、Description、OG Image | `<head>` |
+| 主題色彩（v2） | Primary / Accent / Background | 全站 CSS Variables |
+
+### 16.3 預約管理
+
+#### 16.3.1 列表/月曆雙檢視
+- **列表檢視**：Filter（狀態、日期、服務、來源、姓名/電話）、批次選取、CSV 匯出
+- **月曆檢視**：日曆網格顯示每天預約，點日子展開時段、衝突警告紅標
+- **甘特圖檢視**（v2）：時間軸方式顯示一天的所有預約
+
+#### 16.3.2 預約詳情
+- 全欄位可編輯（含日期時間，會走 availability 驗證）
+- 狀態流轉按鈕（一鍵切換）
+- 來源 badge（LINE 客戶 / 電話 / 私訊 / 走入）
+- 內部備註（客戶看不到）
+- 同電話/userId 客戶歷史展開
+- 變更歷史（誰在何時改了什麼，來自 audit log）
+- **重新推播按鈕**：選模板 → 重發
+
+#### 16.3.3 後台代客建立預約
+- 「+ 新增預約」按鈕
+- 流程見 §6.5
+- 支援：忽略時段衝突、不通知客戶、連結到已註冊用戶
+- 同電話即時搜尋顯示歷史，避免重複建檔
+
+#### 16.3.4 批次操作
+- 多選 → 標記完成 / 批次取消 / 批次推送提醒
+- 「全選未處理超過 7 天的預約」一鍵清理
+
+### 16.4 可預約時間管理
+
+| 設定 | 描述 | 預設 |
+|------|------|------|
+| 每週固定時段 | 週日~週六各自的營業時段（可多段） | 已有 |
+| 日期 Override | 特定日期改公休或更動時段 | 已有 |
+| 公休日批次設定 | 拖曳行事曆勾選多日公休 | 新增 |
+| 服務時長 | 每個服務的施作分鐘數 | 已有 |
+| 預設時段間隔 | N 分鐘可預約一個（如 30 分） | 已有 |
+| 前後緩衝時間 | 每筆預約前後預留 N 分鐘清潔 | 新增 |
+| 最早可預約 | 客戶最早可預約幾天後 | 新增（預設 1） |
+| 最晚可預約 | 客戶最晚可預約幾小時前 | 新增（預設 24） |
+| 取消時限 | 距預約 N 小時內不可取消 | 新增（預設 24） |
+| 同用戶限制 | 一週最多 N 筆 | 新增（預設無限） |
+| 強制 LINE 登入 | 預約必須先 LINE 登入 | 新增（預設 ON） |
+
+**UI**：
+- 行事曆網格直接拖曳設定時段
+- 「複製本週設定至下個月」一鍵
+- 「設為公休」/「臨時加班」單日操作
+
+### 16.5 用戶管理（LINE 客戶）
+
+- **列表**：頭像、名稱、追蹤狀態、註冊日、預約次數、最後預約、tags
+- **Filter**：已追蹤、有電話、有 email、含特定 tag、黑名單
+- **Search**：名稱、電話、LINE ID、tag
+- **詳情**：
+  - 個人資料（可編輯 phone、tags、notes、blocked）
+  - 歷史預約清單
+  - 推播紀錄
+  - **「+ 為此用戶建立預約」**（一鍵跳轉預約建立並預填）
+  - **「+ 推訊息」**（單發訊息模態）
+- **匯出**：CSV / Excel（行銷用）
+
+### 16.6 LINE 訊息模板
+
+- 模板列表（見 §4.4）
+- 每筆可：啟用/停用、編輯內容、即時預覽、切換 text/flex
+- 變數插入提示（點擊變數自動插入光標位置）
+- Flex Message：提供常用範本（預約卡、優惠卡）
+- 「測試發送給自己」按鈕（送到管理員的 LINE）
+- 修改後立即生效（不需重新部署）
+
+### 16.7 主動推播 + 推播歷史
+
+#### 推播表單
+- 對象：單一用戶 / 標籤群組 / 全體追蹤者
+- 訊息類型：文字 / Flex / 圖片
+- 立即 / 排程
+- 配額警告：本次將消耗 N 則、本月剩餘 M 則
+- 二次確認（避免誤送）
+
+#### 推播歷史
+- 列表：時間、對象、內容摘要、成功/失敗數、發送者
+- 失敗筆可重試
+- 排程中可取消
+
+### 16.8 Rich Menu 管理
+
+- 上傳 2500x1686 圖片（提供範本下載）
+- 6 區塊 / 4 區塊範本
+- 每區塊定義 action：URL / postback / 文字
+- 預覽 + 部署到 LINE
+- 多版本管理（v2）：A/B test 不同 Rich Menu
+
+### 16.9 自動回覆關鍵字
+
+- 關鍵字陣列 ↔ 回覆內容
+- 匹配模式：完全 / 包含 / Regex
+- 啟用/停用
+- Fallback：無關鍵字命中時的預設回應
+
+### 16.10 系統設定（擴充）
+
+- 業務名稱、營業時間描述（文字）、預約規則文案
+- **預約總開關**（緊急停止用）
+- **強制 LINE 登入**（如 §4.8 設定）
+- LINE 金鑰：Login / Messaging / LIFF ID（含遮罩顯示）
+- 推播對象 ID（店家通知用）
+- 時區、語系
+- 帳號密碼變更
+- 多管理員（v2）：邀請、權限分級
+- API 健康檢查連結
+
+### 16.11 稽核與安全
+
+- 操作日誌：時間、管理員、動作、目標、IP
+- Filter / Search / Export
+- 登入記錄
+- Webhook event log（讀取 §4.3 的 line_webhook_events）
+
+### 16.12 後台 UI 結構建議
+
+```
+左側 Sidebar
+├── 📊 Dashboard
+├── 📅 預約管理
+│   ├── 列表
+│   ├── 月曆
+│   └── + 新增預約
+├── 👥 LINE 客戶
+├── 💬 LINE 設定
+│   ├── 訊息模板
+│   ├── 主動推播
+│   ├── 推播歷史
+│   ├── Rich Menu
+│   ├── 自動回覆
+│   └── 推播配額
+├── 🌐 前台內容
+│   ├── 個人資訊
+│   ├── 服務項目
+│   ├── 作品集
+│   └── 最新消息
+├── ⚙ 系統設定
+│   ├── 預約時間
+│   ├── 預約規則
+│   ├── 業務資訊
+│   └── 帳號密碼
+└── 🔒 稽核日誌
+```
+
+---
+
+## 17. 待 Shane 確認事項
+
+### 17.1 基礎決策
 - [ ] 雲端架構是否採 **Render + Supabase + Cloudflare**？
 - [ ] 預計購買的網域名稱（用於 Channel 設定）？
-- [ ] 是否需要 email 欄位（會增加 LINE Login 申請手續）？
-- [ ] Phase 2、3、4 是否依序推進，每階段都 PR 給你 review？
-- [ ] 月費預算上限（影響 Render / Supabase 方案選擇）？
+- [ ] 是否需要 email scope（會增加 LINE Login 申請手續）？
+- [ ] 月費預算上限（影響方案選擇）？
+
+### 17.2 預約規則
+- [ ] 「強制 LINE 登入才能預約」是否為預設值？（已預設為 ON）
+- [ ] 取消時限預設 24 小時是否合理？
+- [ ] 每位用戶每週預約上限要設嗎？
+- [ ] 預約前後緩衝時間（清潔/準備）預設幾分鐘？
+
+### 17.3 後台代客預約
+- [ ] 後台代客建立預約時，預設是否要自動推播給客戶？（建議：有 LINE userId 時預設 ON，否則 OFF）
+- [ ] 「忽略時段衝突」按鈕是否需要二次確認密碼？
+- [ ] 「走入客戶」是否要建立 User 紀錄（無 LINE userId 也建立）以便將來追蹤？
+
+### 17.4 訊息與推播
+- [ ] 預約成立時，**店家**收到的通知格式是否需要 Flex Message（含按鈕快速確認）？
+- [ ] 每日提醒固定 10:00 推送，或讓店家自訂時間？
+- [ ] 客戶可以選擇「不接受提醒」嗎？（個人偏好）
+- [ ] 推播配額警告閾值（剩 N 則時警告）？
+
+### 17.5 開發節奏
+- [ ] Phase 1 → 2 → 2.5 → 3 → 4 → 4.5 → 4.7 → 5 順序是否 OK？
+- [ ] 每個 Phase 結束開 PR 給你 review，還是全部完成再合併？
+- [ ] 上線時想要先邀請少量客戶試用（soft launch）還是直接公開？
 
 ---
 
@@ -701,3 +1325,4 @@ Phase 1 ─▶ Phase 2 ─▶ Phase 3 ─▶ Phase 4 ─▶ Phase 5
 | 版本 | 日期 | 變更 |
 |------|------|------|
 | v1.0 | 2026-05-11 | 初版 |
+| v1.1 | 2026-05-11 | 擴充後台管理功能：代客預約、訊息模板、主動推播、用戶管理、稽核日誌；新增 Phase 2.5 / 4.5 / 4.7 |
