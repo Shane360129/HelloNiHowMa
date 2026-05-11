@@ -1,9 +1,23 @@
 # La Paisley 雲端部署 + LINE 生態整合規格書
 
-> **版本**：v1.1 (Draft)
+> **版本**：v1.2 (Draft)
 > **撰寫日期**：2026-05-11
 > **作者**：Shane / Claude
 > **狀態**：待 Shane 審閱
+
+---
+
+## 📌 決策紀錄（Resolved）
+
+以下為 Shane 已確認的關鍵設計決策，後續實作以此為準：
+
+| # | 議題 | 決議 |
+|---|------|------|
+| D1 | 強制 LINE 登入才能預約 | **預設 ON**（`settings.lineLoginRequired = true`） |
+| D2 | 後台代客建立預約時的推播策略 | 建立時**不推播**；待管理員把狀態改為 `confirmed` 才推播「預約成功」訊息給客戶 |
+| D3 | 每日預約提醒時間 | **店家可在後台自訂**（`settings.reminderTime`，預設 10:00） |
+| D4 | 店家收到的新預約通知格式 | **Flex Message**，含「✅ 確認預約」「❌ 取消預約」「📋 查看詳情」按鈕，店家在 LINE 內可一鍵更新狀態 |
+| D5 | 開發節奏 | 全部 Phase 在 `claude/analyze-project-content-0kt37` 分支完成後，**一次合併**為單一 PR |
 
 ---
 
@@ -257,16 +271,19 @@
 
 **預設 seed 的模板 key**：
 
-| Key | 觸發時機 | 收件對象 | 啟用 |
-|-----|----------|----------|------|
-| `booking_created_customer` | 預約成立 | 客戶 | ✅ |
-| `booking_created_store` | 預約成立 | 店家 | ✅ |
-| `booking_confirmed_customer` | 店家標記確認 | 客戶 | ✅ |
-| `booking_completed_customer` | 服務完成 | 客戶 | ⬜ |
-| `booking_cancelled_customer` | 預約取消 | 客戶 | ✅ |
-| `booking_reminder_d1` | 預約前一天 10:00 | 客戶 | ✅ |
-| `booking_reminder_h3` | 預約前 3 小時 | 客戶 | ⬜ |
-| `oa_welcome` | 新追蹤者加入 | 客戶 | ✅ |
+| Key | 觸發時機 | 收件對象 | 預設格式 | 預設啟用 |
+|-----|----------|----------|----------|----------|
+| `booking_created_customer` | **客戶自己**送出預約成立（`source=customer_self`） | 客戶 | text | ✅ |
+| `booking_created_store` | **客戶自己**送出預約成立 | 店家 | **flex**（含確認按鈕，見 §7.4） | ✅ |
+| `booking_confirmed_customer` | 任何預約被店家標記 `confirmed`（含後台代客預約確認） | 客戶 | text | ✅ |
+| `booking_completed_customer` | 服務完成 | 客戶 | text | ⬜ |
+| `booking_cancelled_customer` | 預約取消 | 客戶 | text | ✅ |
+| `booking_reminder` | 預約前 N 天 / 時間依 `settings.reminderTime` | 客戶 | text | ✅ |
+| `oa_welcome` | 新追蹤者加入 | 客戶 | flex | ✅ |
+
+**觸發規則細節（依 D2 決策）**：
+- **客戶自己預約** → 立即觸發 `booking_created_customer`（給客戶）+ `booking_created_store` Flex（給店家）
+- **後台代客預約**（任何 `source` 非 `customer_self`） → 建立時**不**觸發任何模板。直到店家把狀態改為 `confirmed`，才觸發 `booking_confirmed_customer`（需有 LINE userId 才推播）
 
 **可用變數**：
 `{name}`, `{date}`, `{time}`, `{endTime}`, `{service}`, `{phone}`, `{notes}`, `{duration}`, `{storeName}`, `{storeAddress}`, `{storePhone}`, `{cancelUrl}`, `{rescheduleUrl}`
@@ -330,17 +347,22 @@
   }
 ```
 
-### 4.8 擴充 `settings` 表（預約規則）
+### 4.8 擴充 `settings` 表（預約規則 + 提醒）
 
 ```diff
   {
     ...（原欄位）
-+   bookingBufferMinutes:    INTEGER DEFAULT 0,    // 每筆預約前後緩衝
++   bookingBufferMinutes:    INTEGER DEFAULT 0,    // 每筆預約前後緩衝（分鐘）
 +   bookingEarliestDays:     INTEGER DEFAULT 1,    // 最早可預約幾天後
 +   bookingLatestHours:      INTEGER DEFAULT 24,   // 最晚可預約幾小時前
 +   bookingCancelHoursLimit: INTEGER DEFAULT 24,   // 距預約 N 小時內不可取消
 +   bookingPerUserPerWeek:   INTEGER DEFAULT 0,    // 0=不限
-+   lineLoginRequired:       BOOLEAN DEFAULT true, // 是否強制 LINE 登入才能預約
++   lineLoginRequired:       BOOLEAN DEFAULT true, // 強制 LINE 登入才能預約 (D1)
++   reminderEnabled:         BOOLEAN DEFAULT true, // 是否啟用每日提醒
++   reminderTime:            STRING  DEFAULT '10:00', // 提醒發送時間 HH:MM (D3)
++   reminderLeadDays:        INTEGER DEFAULT 1,    // 提前幾天提醒（1=前一天）
++   adminLineUserIds:        JSONB   DEFAULT '[]', // 可在 LINE 一鍵確認預約的店員 userId 白名單 (D4)
++   pushQuotaWarnThreshold:  INTEGER DEFAULT 50,   // 推播配額剩 N 則時警告
   }
 ```
 
@@ -479,22 +501,37 @@ LIFF 內取得 server JWT。
   "internalNotes": "老客戶介紹",
   "source": "admin_phone",
   "userId": null,
-  "ignoreConflict": false,
-  "notifyCustomer": false
+  "status": "pending",
+  "ignoreConflict": false
 }
 ```
 
-**處理邏輯**：
+**處理邏輯**（依 D2 決策）：
 1. 驗證 admin JWT
 2. 若 `ignoreConflict=false`，跑 `validateBookingSlot()`；否則跳過
-3. 若提供 `userId`，自動帶入該用戶的 LINE userId
-4. 建立 booking，記錄 `createdByAdminId`
-5. 若 `notifyCustomer=true` 且有 LINE userId：推播 `booking_created_customer` 模板
-6. 一律推 `booking_created_store` 給店家
-7. 記錄 audit log
+3. 若提供 `userId`，自動帶入該用戶的 LINE userId 與姓名
+4. 建立 booking，記錄 `createdByAdminId` 與 `source`
+5. **不**推播任何訊息給客戶（D2：等狀態改為 confirmed 才推）
+6. **不**推播店家通知（admin 自己建立的，已知）
+7. 若 `status === 'confirmed'`（admin 直接以已確認狀態建立）且 booking 有 LINE userId → 立即觸發 `booking_confirmed_customer`
+8. 記錄 audit log
+
+**設計理由**：D2 規定後台代客預約不在建立時打擾客戶（很多狀況是電話接洽中、客戶還沒最終答應），等店家確認時間後再發「預約成功」訊息。
+
+#### `PATCH /api/admin/bookings/:id`（既有，補充狀態流轉副作用）
+
+當 `status` 欄位變動時自動觸發對應模板（依 D2、D4 決策）：
+
+| 狀態變化 | 觸發模板 | 條件 |
+|----------|----------|------|
+| `pending → confirmed` | `booking_confirmed_customer` | booking 有 LINE userId 且模板啟用 |
+| `* → completed` | `booking_completed_customer` | 同上 |
+| `* → cancelled` | `booking_cancelled_customer` | 同上 |
+
+這也是 D2「後台確認預約後再推播預約成功訊息」的實作落點。
 
 #### `PATCH /api/admin/bookings/:id/notify`（新增）
-重新發送預約通知（修改後重發、漏發補發）。
+手動重發某一模板（修改後重發、漏發補發、測試用）。
 
 **Body**：`{ "templateKey": "booking_confirmed_customer" }`
 
@@ -732,7 +769,7 @@ LINE Messaging API 配額查詢。
 - 點開可看詳情、取消（符合條件時）
 - 切換 tab：未完成 / 已完成 / 已取消
 
-### 6.5 後台代客預約流程
+### 6.5 後台代客預約流程（依 D2）
 
 ```
 [後台 → 預約管理]
@@ -756,19 +793,37 @@ LINE Messaging API 配額查詢。
 │  ⚠ 此時段已被預約: ☐ 仍要建立     │
 │  客戶備註  [_______________]       │
 │  內部備註  [_______________]       │
-│  ☐ 自動推播 LINE 確認（需 userId） │
-│  [取消]  [建立並通知 ✓]            │
+│                                    │
+│  建立後狀態:                       │
+│   ● 待確認 (暫不通知客戶)          │
+│   ○ 已確認 (立刻推播預約成功訊息)  │
+│                                    │
+│  [取消]  [建立]                    │
 └────────────────────────────────────┘
      │
      ▼
 [POST /api/admin/bookings]
      │
      ▼
-[Toast: 預約已建立 + 已推播店家]
+[預設 status=pending → 不推播]
+[列表新增一筆 (來源: 電話) 狀態: 待確認]
      │
      ▼
-[列表自動 refresh]
+[管理員與客戶確認時間後]
+     │
+     ▼
+[點該筆預約 → 改狀態為 confirmed]
+     │
+     ▼
+[PATCH /api/admin/bookings/:id]
+     │
+     ▼
+[觸發 booking_confirmed_customer 模板]
+[若客戶有 LINE userId → 推播「預約成功」]
+[若無 LINE userId → 僅紀錄，店家自行電話通知]
 ```
+
+**Note**：表單不再有「自動推播」勾選 — 完全由狀態決定（D2）。
 
 ### 6.6 後台訊息模板編輯流程
 
@@ -881,23 +936,104 @@ LINE Messaging API 配額查詢。
 
 每個區塊對應 `postback` 或 `uri` action。
 
-### 7.3 自動提醒（Cron Job）
+### 7.3 自動提醒（Cron Job，依 D3）
 
-**排程**：每日 10:00 (Asia/Taipei)
+**設計目標**：店家可在後台自訂提醒時間，**不需重新部署即可生效**。
+
+**排程**：cron 每小時整點執行一次（24 次/天），由程式內邏輯比對 `settings.reminderTime` 決定是否實際送出。
+
 **邏輯**：
-1. 撈出 `date = 明天` 且 `status IN (pending, confirmed)` 且 `reminderSentAt IS NULL` 的 booking
-2. 對每筆推送 Flex Message：「您明天 14:00 有一場霧眉預約，請準時赴約 ❤️」
-3. 更新 `reminderSentAt = now()`
+1. 讀取 `settings`，取得 `reminderEnabled`、`reminderTime`（HH:MM）、`reminderLeadDays`
+2. 若 `reminderEnabled=false` 直接結束
+3. 計算現在時間（台北時區），與 `reminderTime` 比對：
+   - 若小時不符 → 直接結束（保留每整點都跑的彈性）
+   - 若小時相符且分鐘 ≤ 30 → 繼續
+4. 計算目標日期：`今天 + reminderLeadDays`
+5. 撈出 `date = 目標日期` 且 `status IN (pending, confirmed)` 且 `reminderSentAt IS NULL` 的 booking
+6. 對每筆套 `booking_reminder` 模板推送
+7. 更新 `reminderSentAt = now()`
 
 **Render 設定**：
 ```yaml
 # render.yaml
 - type: cron
   name: la-paisley-reminder
-  schedule: "0 2 * * *"  # UTC 02:00 = 台北 10:00
+  schedule: "0 * * * *"   # 每小時整點，UTC
   buildCommand: cd server && npm install
   startCommand: cd server && node jobs/sendReminders.js
 ```
+
+**好處**：店家在後台改 `reminderTime` 為 18:00 → 同日下個整點 cron 跑時自動以新時間發送，無需重新部署。
+
+### 7.4 店家 LINE 內一鍵確認預約（依 D4）
+
+**情境**：客戶完成預約後，店家不需打開後台，在 LINE 收到的 Flex Message 直接點按鈕即可確認或取消。
+
+#### 7.4.1 `booking_created_store` Flex Message 範本
+
+```
+┌─────────────────────────────────────┐
+│  📅 新預約通知                       │
+├─────────────────────────────────────┤
+│  王小姐                              │
+│  電話: 0912-345-678                  │
+│  LINE: @wangxiaojie                  │
+├─────────────────────────────────────┤
+│  項目: 韓式霧眉 (210 分)             │
+│  日期: 2026-06-01 (六)               │
+│  時間: 10:00 - 13:30                 │
+│  備註: 第一次預約                    │
+├─────────────────────────────────────┤
+│  [✅ 確認預約]   [❌ 取消預約]        │
+│       [📋 查看詳情]                  │
+└─────────────────────────────────────┘
+```
+
+**按鈕 actions**：
+- **確認預約** → `postback`，data: `action=booking_confirm&id=123`
+- **取消預約** → `postback`，data: `action=booking_cancel&id=123`（前端二次確認）
+- **查看詳情** → `uri`，跳轉 `https://lapaisley.com/admin/bookings/123`（需先登入後台）
+
+#### 7.4.2 Webhook postback 處理流程
+
+```
+[店家點 ✅ 確認預約]
+     │
+     ▼
+[LINE 平台發送 webhook]
+POST /api/line/webhook
+{ events: [{ type: 'postback', source: { userId: 'Uxxx' }, postback: { data: 'action=booking_confirm&id=123' } }] }
+     │
+     ▼
+[驗證 x-line-signature HMAC]
+     │
+     ▼
+[檢查 source.userId 是否在 settings.adminLineUserIds 白名單]
+     │  否 → 回覆「您沒有權限執行此操作」
+     │
+     ▼ 是
+[parse postback.data]
+     │
+     ▼
+[執行對應動作:
+   booking_confirm → 更新 status=confirmed → 觸發 booking_confirmed_customer
+   booking_cancel  → 更新 status=cancelled → 觸發 booking_cancelled_customer
+]
+     │
+     ▼
+[回覆店家 Flex Message:
+   ✅ 已確認預約 - 王小姐 6/1 10:00
+   📤 已通知客戶
+]
+     │
+     ▼
+[記錄 audit log: who=店家LINE userId, action=booking.confirm.via_line]
+```
+
+**白名單機制（D4 + §9 安全）**：
+- 只有 `settings.adminLineUserIds` 內的 LINE userId 才能透過 LINE 一鍵操作
+- 後台「系統設定」頁可加入/移除（點 LINE 登入連結取得自己的 userId 後填入）
+- 預設首次部署時，店家自行加入；未設定時所有 postback 一律拒絕
 
 ---
 
@@ -1076,14 +1212,23 @@ LINE 提供 [LIFF Inspector](https://developers.line.biz/en/docs/liff/use-liff-i
 ## 13. 開發順序建議
 
 ```
-Phase 1 ─▶ Phase 2 ─▶ Phase 3 ─▶ Phase 4 ─▶ Phase 5
-   │           │           │           │           │
-   ▼           ▼           ▼           ▼           ▼
-基礎          會員          LINE 內      雙向         上線
-建設          系統          無縫預約    聊天機器人   驗收
+Phase 1 ─▶ 2 ─▶ 2.5 ─▶ 3 ─▶ 4 ─▶ 4.5 ─▶ 4.7 ─▶ 5
+   │       │     │      │    │     │       │      │
+   ▼       ▼     ▼      ▼    ▼     ▼       ▼      ▼
+ 基礎    LINE   後台   LIFF  雙向  訊息   後台    上線
+ 建設    Login  代客    內    Bot   模板   Dashboard
+        會員   + 用戶  無縫  Cron  推播   稽核
+        系統   管理   預約  提醒  歷史
 ```
 
-**理由**：每個 Phase 結束都是可獨立部署的版本，可逐步上線測試，降低風險。
+**合併策略（依 D5）**：
+
+- 所有 Phase 都在 **同一條 feature branch** (`claude/analyze-project-content-0kt37`) 上累積 commits
+- 每個 Phase 結束時 commit 並推到 origin，方便 Shane 即時審閱進度，但**不**開 PR
+- 全部 Phase 完成、整合測試通過後，**一次性開單一 PR 合併到 main**
+- PR 內按 Phase 切分 commit history，便於 review
+
+**理由**：避免多次小 PR 來回審查的負擔，整套上線時所有功能彼此搭配完整、無中間半成品狀態。
 
 ---
 
@@ -1290,33 +1435,33 @@ Phase 1 ─▶ Phase 2 ─▶ Phase 3 ─▶ Phase 4 ─▶ Phase 5
 
 ## 17. 待 Shane 確認事項
 
+> 已決議的事項移至文件頂部「📌 決策紀錄」區塊。以下為仍需釐清的項目。
+
 ### 17.1 基礎決策
-- [ ] 雲端架構是否採 **Render + Supabase + Cloudflare**？
+- [ ] 雲端架構是否採 **Render + Supabase + Cloudflare**？（預設方案）
 - [ ] 預計購買的網域名稱（用於 Channel 設定）？
 - [ ] 是否需要 email scope（會增加 LINE Login 申請手續）？
 - [ ] 月費預算上限（影響方案選擇）？
 
-### 17.2 預約規則
-- [ ] 「強制 LINE 登入才能預約」是否為預設值？（已預設為 ON）
-- [ ] 取消時限預設 24 小時是否合理？
-- [ ] 每位用戶每週預約上限要設嗎？
-- [ ] 預約前後緩衝時間（清潔/準備）預設幾分鐘？
+### 17.2 預約規則細節
+- [ ] 取消時限預設 24 小時是否合理？（已預設 24h）
+- [ ] 每位用戶每週預約上限要設嗎？（已預設 0 = 不限）
+- [ ] 預約前後緩衝時間（清潔/準備）預設幾分鐘？（已預設 0）
+- [ ] 提醒前置天數預設 1 天（前一天提醒），是否需要再加 H-3（前 3 小時）？
 
-### 17.3 後台代客預約
-- [ ] 後台代客建立預約時，預設是否要自動推播給客戶？（建議：有 LINE userId 時預設 ON，否則 OFF）
-- [ ] 「忽略時段衝突」按鈕是否需要二次確認密碼？
+### 17.3 後台代客預約細節
+- [ ] 「忽略時段衝突」按鈕是否需要二次確認（例如 modal 警告）？
 - [ ] 「走入客戶」是否要建立 User 紀錄（無 LINE userId 也建立）以便將來追蹤？
+- [ ] 後台是否允許 admin 直接指定預約 status（pending / confirmed 二選一），或一律 pending？
 
-### 17.4 訊息與推播
-- [ ] 預約成立時，**店家**收到的通知格式是否需要 Flex Message（含按鈕快速確認）？
-- [ ] 每日提醒固定 10:00 推送，或讓店家自訂時間？
-- [ ] 客戶可以選擇「不接受提醒」嗎？（個人偏好）
-- [ ] 推播配額警告閾值（剩 N 則時警告）？
+### 17.4 訊息與推播細節
+- [ ] 客戶可以選擇「不接受提醒」嗎？（個人偏好設定，預設都收到）
+- [ ] 推播配額警告閾值（剩 N 則時警告，目前預設 50）
+- [ ] 店家 LINE 一鍵確認後，是否同時要在後台介面顯示「來自 LINE 的操作」標記？
 
-### 17.5 開發節奏
-- [ ] Phase 1 → 2 → 2.5 → 3 → 4 → 4.5 → 4.7 → 5 順序是否 OK？
-- [ ] 每個 Phase 結束開 PR 給你 review，還是全部完成再合併？
+### 17.5 上線
 - [ ] 上線時想要先邀請少量客戶試用（soft launch）還是直接公開？
+- [ ] 是否需要 Google Analytics / GA4 追蹤前台轉換率？
 
 ---
 
@@ -1326,3 +1471,4 @@ Phase 1 ─▶ Phase 2 ─▶ Phase 3 ─▶ Phase 4 ─▶ Phase 5
 |------|------|------|
 | v1.0 | 2026-05-11 | 初版 |
 | v1.1 | 2026-05-11 | 擴充後台管理功能：代客預約、訊息模板、主動推播、用戶管理、稽核日誌；新增 Phase 2.5 / 4.5 / 4.7 |
+| v1.2 | 2026-05-11 | 確認 Shane 5 項決策（D1~D5）；後台代客預約改為「不自動推播，待確認後再推」流程；新增店家 LINE 一鍵確認 Flex Message + postback 流程；提醒時間改為後台可自訂；開發採單一 PR 合併 |
