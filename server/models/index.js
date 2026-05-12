@@ -12,6 +12,7 @@ const User = require('./User');
 const MessageTemplate = require('./MessageTemplate');
 const LineWebhookEvent = require('./LineWebhookEvent');
 const Broadcast = require('./Broadcast');
+const AdminAuditLog = require('./AdminAuditLog');
 
 // ====== Associations ======
 
@@ -32,5 +33,6 @@ module.exports = {
   User,
   MessageTemplate,
   LineWebhookEvent,
-  Broadcast
+  Broadcast,
+  AdminAuditLog
 };

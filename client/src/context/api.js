@@ -317,6 +317,49 @@ export async function fetchAdminUserTags() {
   return handle(res, '載入標籤失敗');
 }
 
+/* Admin: Dashboard */
+export async function fetchDashboardStats() {
+  const res = await fetch(`${API}/api/admin/dashboard/stats`, { headers: authHeaders() });
+  return handle(res, '載入統計資料失敗');
+}
+
+/* Admin: Audit logs */
+export async function fetchAuditLogs(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, v); });
+  const res = await fetch(`${API}/api/admin/audit-logs${qs.toString() ? `?${qs}` : ''}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入稽核日誌失敗');
+}
+
+/* Admin: LINE Rich Menus */
+export async function fetchRichMenus() {
+  const res = await fetch(`${API}/api/admin/line/richmenus`, { headers: authHeaders() });
+  return handle(res, '載入 Rich Menu 失敗');
+}
+export async function setDefaultRichMenu(id) {
+  const res = await fetch(`${API}/api/admin/line/richmenus/${id}/set-default`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  return handle(res, '設定預設失敗');
+}
+export async function clearDefaultRichMenu() {
+  const res = await fetch(`${API}/api/admin/line/richmenus/default`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '清除預設失敗');
+}
+export async function deleteRichMenu(id) {
+  const res = await fetch(`${API}/api/admin/line/richmenus/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
 /* Admin: Settings */
 export async function fetchSettings() {
   const res = await fetch(`${API}/api/admin/settings`, {

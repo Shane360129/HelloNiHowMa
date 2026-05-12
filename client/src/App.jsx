@@ -16,6 +16,8 @@ import ManageBookings from './pages/admin/ManageBookings';
 import ManageUsers from './pages/admin/ManageUsers';
 import ManageTemplates from './pages/admin/ManageTemplates';
 import Broadcasts from './pages/admin/Broadcasts';
+import RichMenu from './pages/admin/RichMenu';
+import AuditLogs from './pages/admin/AuditLogs';
 import ManageNews from './pages/admin/ManageNews';
 import Settings from './pages/admin/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -47,6 +49,8 @@ export default function App() {
             <Route path="/admin/users" element={<ProtectedRoute><ManageUsers /></ProtectedRoute>} />
             <Route path="/admin/templates" element={<ProtectedRoute><ManageTemplates /></ProtectedRoute>} />
             <Route path="/admin/broadcasts" element={<ProtectedRoute><Broadcasts /></ProtectedRoute>} />
+            <Route path="/admin/rich-menu" element={<ProtectedRoute><RichMenu /></ProtectedRoute>} />
+            <Route path="/admin/audit-logs" element={<ProtectedRoute><AuditLogs /></ProtectedRoute>} />
             <Route path="/admin/services" element={<ProtectedRoute><ManageServices /></ProtectedRoute>} />
             <Route path="/admin/works" element={<ProtectedRoute><ManageWorks /></ProtectedRoute>} />
             <Route path="/admin/news" element={<ProtectedRoute><ManageNews /></ProtectedRoute>} />

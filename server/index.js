@@ -17,8 +17,11 @@ const {
   News,
   User,
   MessageTemplate,
-  Broadcast
+  Broadcast,
+  LineWebhookEvent,
+  AdminAuditLog
 } = require('./models');
+const { logAdmin } = require('./auditLog');
 const {
   notifyBookingCreated,
   notifyBookingStatusChange,
@@ -665,6 +668,17 @@ app.post('/api/admin/bookings', authMiddleware, async (req, res) => {
       .catch(err => console.error('[LINE] admin booking notify error:', err.message));
   }
 
+  logAdmin(req, 'booking.create', 'Booking', booking.id, {
+    name: booking.name,
+    source: booking.source,
+    date: booking.date,
+    time: booking.time,
+    service: booking.service,
+    status: booking.status,
+    ignoreConflict: !!ignoreConflict,
+    userId: booking.userId
+  });
+
   res.status(201).json(booking);
 });
 
@@ -690,13 +704,27 @@ app.patch('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
       .catch(err => console.error('[LINE] status change notify error:', err.message));
   }
 
+  logAdmin(req, 'booking.update', 'Booking', booking.id, {
+    changedFields: Object.keys(update),
+    prevStatus,
+    newStatus: update.status || prevStatus
+  });
+
   res.json(booking);
 });
 
 app.delete('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
   const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
+  const snapshot = {
+    name: booking.name,
+    date: booking.date,
+    time: booking.time,
+    service: booking.service,
+    source: booking.source
+  };
   await booking.destroy();
+  logAdmin(req, 'booking.delete', 'Booking', req.params.id, snapshot);
   res.json({ message: '已刪除' });
 });
 
@@ -781,6 +809,11 @@ app.patch('/api/admin/users/:id', authMiddleware, async (req, res) => {
   const user = await User.findByPk(req.params.id);
   if (!user) return res.status(404).json({ error: '用戶不存在' });
   await user.update(update);
+  logAdmin(req, 'user.update', 'User', user.id, {
+    changedFields: Object.keys(update),
+    blocked: update.blocked,
+    tags: update.tags
+  });
   res.json(user);
 });
 
@@ -809,15 +842,26 @@ app.post('/api/admin/users', authMiddleware, async (req, res) => {
     tags: Array.isArray(tags) ? tags : [],
     createdByAdminId: req.user?.sub ? Number(req.user.sub) : null
   });
+  logAdmin(req, 'user.create', 'User', user.id, {
+    displayName: user.displayName,
+    source: user.source,
+    phone: user.phone
+  });
   res.status(201).json(user);
 });
 
 app.delete('/api/admin/users/:id', authMiddleware, async (req, res) => {
   const user = await User.findByPk(req.params.id);
   if (!user) return res.status(404).json({ error: '用戶不存在' });
-  // 將 user 的 booking userId 設為 null，保留預約紀錄
+  const snapshot = {
+    displayName: user.displayName,
+    phone: user.phone,
+    lineUserId: user.lineUserId,
+    source: user.source
+  };
   await Booking.update({ userId: null }, { where: { userId: user.id } });
   await user.destroy();
+  logAdmin(req, 'user.delete', 'User', req.params.id, snapshot);
   res.json({ message: '已刪除' });
 });
 
@@ -844,6 +888,10 @@ app.put('/api/admin/message-templates/:key', authMiddleware, async (req, res) =>
   }
   update.updatedBy = req.user.username || 'admin';
   await tpl.update(update);
+  logAdmin(req, 'template.update', 'MessageTemplate', tpl.key, {
+    changedFields: Object.keys(update),
+    enabled: tpl.enabled
+  });
   res.json(tpl);
 });
 
@@ -1119,6 +1167,14 @@ app.post('/api/admin/broadcasts', authMiddleware, async (req, res) => {
     sentAt: new Date()
   });
 
+  logAdmin(req, 'broadcast.send', 'Broadcast', broadcast.id, {
+    type,
+    messageType,
+    targets: type === 'all_followers' ? 'all_followers' : (targets?.length || 0),
+    successCount,
+    failureCount
+  });
+
   res.json(broadcast);
 });
 
@@ -1140,6 +1196,179 @@ app.get('/api/admin/user-tags', authMiddleware, async (req, res) => {
     (u.tags || []).forEach(t => set.add(t));
   }
   res.json([...set].sort());
+});
+
+// ============ Admin: Dashboard ============
+
+function todayInBusinessTz() {
+  const offset = Number(process.env.BOOKING_TZ_OFFSET_MINUTES ?? 480);
+  return new Date(Date.now() + offset * 60 * 1000);
+}
+function ymd(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+app.get('/api/admin/dashboard/stats', authMiddleware, async (req, res) => {
+  const now = todayInBusinessTz();
+  const todayStr = ymd(now);
+
+  const weekStart = new Date(now);
+  weekStart.setUTCDate(now.getUTCDate() - now.getUTCDay());
+  const weekStartStr = ymd(weekStart);
+
+  const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const monthStartStr = ymd(monthStart);
+
+  const [
+    todayBookings,
+    todayPending,
+    weekBookings,
+    monthBookings,
+    monthNewUsers,
+    totalUsers,
+    lineFollowers,
+    lastWebhookEvent,
+    sourceRows,
+    upcomingBookings
+  ] = await Promise.all([
+    Booking.count({ where: { date: todayStr, status: { [Op.ne]: 'cancelled' } } }),
+    Booking.count({ where: { date: todayStr, status: 'pending' } }),
+    Booking.count({ where: { date: { [Op.gte]: weekStartStr }, status: { [Op.ne]: 'cancelled' } } }),
+    Booking.count({ where: { date: { [Op.gte]: monthStartStr }, status: { [Op.ne]: 'cancelled' } } }),
+    User.count({ where: { createdAt: { [Op.gte]: monthStart } } }),
+    User.count(),
+    User.count({ where: { isFollowingOA: true } }),
+    LineWebhookEvent.findOne({ order: [['createdAt', 'DESC']] }),
+    Booking.findAll({
+      attributes: ['source', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+      where: { date: { [Op.gte]: monthStartStr }, status: { [Op.ne]: 'cancelled' } },
+      group: ['source'],
+      raw: true
+    }),
+    Booking.findAll({
+      where: { date: { [Op.gte]: todayStr }, status: { [Op.in]: ['pending', 'confirmed'] } },
+      order: [['date', 'ASC'], ['time', 'ASC']],
+      limit: 8
+    })
+  ]);
+
+  res.json({
+    today: { bookings: todayBookings, pending: todayPending, date: todayStr },
+    thisWeek: { bookings: weekBookings },
+    thisMonth: {
+      bookings: monthBookings,
+      newUsers: monthNewUsers,
+      sourceBreakdown: sourceRows.map(r => ({ source: r.source, count: Number(r.count) }))
+    },
+    users: { total: totalUsers, lineFollowers },
+    lineHealth: {
+      lastWebhookAt: lastWebhookEvent?.createdAt || null,
+      lastWebhookType: lastWebhookEvent?.type || null
+    },
+    upcomingBookings
+  });
+});
+
+// ============ Admin: Audit Logs ============
+
+app.get('/api/admin/audit-logs', authMiddleware, async (req, res) => {
+  const { action, targetType, page = 1, pageSize = 50 } = req.query;
+  const where = {};
+  if (action) where.action = action;
+  if (targetType) where.targetType = targetType;
+  const offset = (Number(page) - 1) * Number(pageSize);
+  const { rows, count } = await AdminAuditLog.findAndCountAll({
+    where,
+    order: [['createdAt', 'DESC']],
+    limit: Math.min(Number(pageSize) || 50, 200),
+    offset
+  });
+  res.json({ logs: rows, total: count, page: Number(page), pageSize: Number(pageSize) });
+});
+
+// ============ Admin: LINE Rich Menu ============
+
+const LINE_API = 'https://api.line.me';
+
+app.get('/api/admin/line/richmenus', authMiddleware, async (req, res) => {
+  try {
+    const { channelAccessToken } = await resolveLineCredentials();
+    if (!channelAccessToken) return res.status(400).json({ error: '尚未設定 Channel Access Token' });
+    const [listRes, defaultRes] = await Promise.all([
+      fetch(`${LINE_API}/v2/bot/richmenu/list`, {
+        headers: { Authorization: `Bearer ${channelAccessToken}` }
+      }),
+      fetch(`${LINE_API}/v2/bot/user/all/richmenu`, {
+        headers: { Authorization: `Bearer ${channelAccessToken}` }
+      })
+    ]);
+    if (!listRes.ok) {
+      return res.status(400).json({ error: `LINE API ${listRes.status}: ${await listRes.text()}` });
+    }
+    const { richmenus = [] } = await listRes.json();
+    const defaultJson = defaultRes.ok ? await defaultRes.json() : null;
+    const defaultId = defaultJson?.richMenuId || null;
+    res.json({
+      richmenus: richmenus.map(m => ({ ...m, isDefault: m.richMenuId === defaultId })),
+      defaultRichMenuId: defaultId
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/line/richmenus/:id/set-default', authMiddleware, async (req, res) => {
+  try {
+    const { channelAccessToken } = await resolveLineCredentials();
+    if (!channelAccessToken) return res.status(400).json({ error: '尚未設定 Channel Access Token' });
+    const r = await fetch(`${LINE_API}/v2/bot/user/all/richmenu/${req.params.id}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${channelAccessToken}` }
+    });
+    if (!r.ok) {
+      return res.status(400).json({ error: `LINE API ${r.status}: ${await r.text()}` });
+    }
+    logAdmin(req, 'richmenu.set_default', 'RichMenu', req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/line/richmenus/default', authMiddleware, async (req, res) => {
+  try {
+    const { channelAccessToken } = await resolveLineCredentials();
+    if (!channelAccessToken) return res.status(400).json({ error: '尚未設定 Channel Access Token' });
+    const r = await fetch(`${LINE_API}/v2/bot/user/all/richmenu`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${channelAccessToken}` }
+    });
+    if (!r.ok) {
+      return res.status(400).json({ error: `LINE API ${r.status}: ${await r.text()}` });
+    }
+    logAdmin(req, 'richmenu.clear_default', 'RichMenu', null);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/admin/line/richmenus/:id', authMiddleware, async (req, res) => {
+  try {
+    const { channelAccessToken } = await resolveLineCredentials();
+    if (!channelAccessToken) return res.status(400).json({ error: '尚未設定 Channel Access Token' });
+    const r = await fetch(`${LINE_API}/v2/bot/richmenu/${req.params.id}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${channelAccessToken}` }
+    });
+    if (!r.ok) {
+      return res.status(400).json({ error: `LINE API ${r.status}: ${await r.text()}` });
+    }
+    logAdmin(req, 'richmenu.delete', 'RichMenu', req.params.id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // ============ Admin: News ============
@@ -1182,6 +1411,9 @@ app.put('/api/admin/settings', authMiddleware, async (req, res) => {
   } else {
     settings = await Setting.create(req.body);
   }
+  logAdmin(req, 'settings.update', 'Setting', settings.id, {
+    changedFields: Object.keys(req.body || {})
+  });
   res.json(settings);
 });
 

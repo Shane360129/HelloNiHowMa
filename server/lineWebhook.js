@@ -13,6 +13,7 @@ const {
   replyText,
   notifyBookingStatusChange
 } = require('./line');
+const { logFromLine } = require('./auditLog');
 
 function verifySignature(rawBody, signature, channelSecret) {
   if (!signature || !channelSecret || !rawBody) return false;
@@ -230,6 +231,14 @@ async function handlePostback(event) {
   const user = booking.userId ? await User.findByPk(booking.userId) : null;
   notifyBookingStatusChange(booking, user, prevStatus)
     .catch(err => console.error('[postback notify]', err.message));
+
+  logFromLine(
+    newStatus === 'confirmed' ? 'booking.confirm.via_line' : 'booking.cancel.via_line',
+    lineUserId,
+    'Booking',
+    booking.id,
+    { prevStatus, newStatus, customerLineUserId: user?.lineUserId || null }
+  );
 
   const label = newStatus === 'confirmed' ? '✅ 已確認' : '❌ 已取消';
   const customerNote = user?.lineUserId

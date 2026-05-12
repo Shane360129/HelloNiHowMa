@@ -1592,3 +1592,20 @@ a.news-card:hover {
   color: #fff;
 }
 .tag-chip-active:hover { filter: brightness(1.05); }
+
+/* === Admin: Dashboard dot indicator === */
+
+.dash-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #c4452f;
+  margin-left: 6px;
+  vertical-align: middle;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.3); opacity: 0.6; }
+}
