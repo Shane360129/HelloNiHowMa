@@ -6,7 +6,8 @@ import {
   fetchAdminUser,
   updateAdminUser,
   createAdminUser,
-  deleteAdminUser
+  deleteAdminUser,
+  createBroadcast
 } from '../../context/api';
 
 const SOURCE_LABEL = {
@@ -221,6 +222,7 @@ function UserDetailDrawer({ detail, onClose, onSaved, onDelete, onCreateBooking 
   });
   const [tagDraft, setTagDraft] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
   const upd = (k, v) => setForm(prev => ({ ...prev, [k]: v }));
 
   const handleAddTag = () => {
@@ -342,10 +344,75 @@ function UserDetailDrawer({ detail, onClose, onSaved, onDelete, onCreateBooking 
         <div className="drawer-footer">
           <button type="button" className="btn btn-danger" onClick={onDelete}>刪除客戶</button>
           <div style={{ flex: 1 }} />
+          {user.lineUserId && (
+            <button type="button" className="btn btn-outline" onClick={() => setPushOpen(true)}>💬 推訊息</button>
+          )}
           <button type="button" className="btn btn-outline" onClick={() => onCreateBooking(user)}>+ 建立預約</button>
           <button type="button" className="btn" onClick={handleSave} disabled={saving}>
             {saving ? '儲存中…' : '儲存變更'}
           </button>
+        </div>
+        {pushOpen && (
+          <SinglePushModal user={user} onClose={() => setPushOpen(false)} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SinglePushModal({ user, onClose }) {
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [result, setResult] = useState(null);
+
+  const handleSubmit = async () => {
+    setError('');
+    if (!content.trim()) { setError('請填寫訊息內容'); return; }
+    if (!confirm(`確定要發送這則訊息給 ${user.displayName} 嗎？`)) return;
+    setSending(true);
+    try {
+      const broadcast = await createBroadcast({
+        type: 'single',
+        recipientUserIds: [user.id],
+        messageType: 'text',
+        content
+      });
+      setResult(broadcast);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={e => e.stopPropagation()}>
+        <h2>推訊息給 {user.displayName}</h2>
+        <div style={{ fontSize: '0.85rem', color: 'var(--text-light)', marginBottom: '0.8rem' }}>
+          LINE userId：{user.lineUserId}
+        </div>
+        {result ? (
+          <div className="alert">
+            {result.successCount > 0 ? '✅ 已送出' : `❌ 發送失敗：${JSON.stringify(result.failureDetails)}`}
+          </div>
+        ) : (
+          <>
+            {error && <div className="alert alert-error">{error}</div>}
+            <div className="form-group">
+              <label>訊息內容</label>
+              <textarea rows={6} value={content} onChange={e => setContent(e.target.value)} />
+            </div>
+          </>
+        )}
+        <div className="form-actions">
+          <button type="button" className="btn btn-outline" onClick={onClose}>關閉</button>
+          {!result && (
+            <button type="button" className="btn" onClick={handleSubmit} disabled={sending}>
+              {sending ? '發送中…' : '發送'}
+            </button>
+          )}
         </div>
       </div>
     </div>

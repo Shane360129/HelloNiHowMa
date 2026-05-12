@@ -11,6 +11,7 @@ const News = require('./News');
 const User = require('./User');
 const MessageTemplate = require('./MessageTemplate');
 const LineWebhookEvent = require('./LineWebhookEvent');
+const Broadcast = require('./Broadcast');
 
 // ====== Associations ======
 
@@ -30,5 +31,6 @@ module.exports = {
   News,
   User,
   MessageTemplate,
-  LineWebhookEvent
+  LineWebhookEvent,
+  Broadcast
 };

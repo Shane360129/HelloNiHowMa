@@ -254,6 +254,69 @@ export async function deleteAdminUser(id) {
   return handle(res, '刪除失敗');
 }
 
+/* Admin: Message Templates */
+export async function fetchMessageTemplates() {
+  const res = await fetch(`${API}/api/admin/message-templates`, { headers: authHeaders() });
+  return handle(res, '載入模板失敗');
+}
+export async function fetchMessageTemplate(key) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}`, { headers: authHeaders() });
+  return handle(res, '載入模板失敗');
+}
+export async function updateMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
+}
+export async function previewMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}/preview`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '預覽失敗');
+}
+export async function testSendMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}/test-send`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '測試發送失敗');
+}
+
+/* Admin: Broadcasts */
+export async function fetchBroadcasts() {
+  const res = await fetch(`${API}/api/admin/broadcasts`, { headers: authHeaders() });
+  return handle(res, '載入失敗');
+}
+export async function createBroadcast(payload) {
+  const res = await fetch(`${API}/api/admin/broadcasts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '推播失敗');
+}
+export async function deleteBroadcast(id) {
+  const res = await fetch(`${API}/api/admin/broadcasts/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+export async function fetchLineQuota() {
+  const res = await fetch(`${API}/api/admin/line/quota`, { headers: authHeaders() });
+  return handle(res, '查詢配額失敗');
+}
+export async function fetchAdminUserTags() {
+  const res = await fetch(`${API}/api/admin/user-tags`, { headers: authHeaders() });
+  return handle(res, '載入標籤失敗');
+}
+
 /* Admin: Settings */
 export async function fetchSettings() {
   const res = await fetch(`${API}/api/admin/settings`, {

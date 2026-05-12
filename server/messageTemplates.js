@@ -178,9 +178,9 @@ function substituteString(text, vars) {
   );
 }
 
-async function renderTemplate(key, vars) {
-  const tpl = await MessageTemplate.findOne({ where: { key } });
-  if (!tpl || !tpl.enabled) return null;
+function renderFromTemplate(tpl, vars, { ignoreEnabled = false } = {}) {
+  if (!tpl) return null;
+  if (!ignoreEnabled && !tpl.enabled) return null;
   if (tpl.channel === 'line_flex' && tpl.flexJson) {
     try {
       const jsonStr = JSON.stringify(tpl.flexJson);
@@ -191,11 +191,33 @@ async function renderTemplate(key, vars) {
         contents: JSON.parse(replaced)
       };
     } catch (err) {
-      console.error(`[templates] flex render failed for ${key}:`, err.message);
+      console.error('[templates] flex render failed:', err.message);
       return null;
     }
   }
   return { type: 'text', text: substituteString(tpl.content, vars) };
+}
+
+async function renderTemplate(key, vars) {
+  const tpl = await MessageTemplate.findOne({ where: { key } });
+  return renderFromTemplate(tpl, vars);
+}
+
+function defaultSampleVars() {
+  return {
+    name: '王小姐',
+    phone: '0912-345-678',
+    service: '韓式霧眉',
+    date: '2026-06-01',
+    time: '10:00',
+    endTime: '13:30',
+    duration: 210,
+    notes: '首次預約',
+    bookingId: 'PREVIEW',
+    storeName: 'La Paisley',
+    storeAddress: '台北市 ・ 預約制',
+    storePhone: '+886 900 000 000'
+  };
 }
 
 // ====== Booking → template variables ======
@@ -235,7 +257,9 @@ module.exports = {
   DEFAULT_TEMPLATES,
   ensureDefaultTemplates,
   renderTemplate,
+  renderFromTemplate,
   buildBookingVars,
   computeEndTime,
-  substituteString
+  substituteString,
+  defaultSampleVars
 };

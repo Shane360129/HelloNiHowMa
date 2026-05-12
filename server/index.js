@@ -15,7 +15,9 @@ const {
   Booking,
   Setting,
   News,
-  User
+  User,
+  MessageTemplate,
+  Broadcast
 } = require('./models');
 const {
   notifyBookingCreated,
@@ -23,7 +25,11 @@ const {
   sendTestMessage,
   resolveCredentials: resolveLineCredentials
 } = require('./line');
-const { ensureDefaultTemplates } = require('./messageTemplates');
+const {
+  ensureDefaultTemplates,
+  renderFromTemplate,
+  defaultSampleVars
+} = require('./messageTemplates');
 const { verifySignature, handleEvent: handleWebhookEvent } = require('./lineWebhook');
 const {
   resolveLoginCredentials,
@@ -813,6 +819,327 @@ app.delete('/api/admin/users/:id', authMiddleware, async (req, res) => {
   await Booking.update({ userId: null }, { where: { userId: user.id } });
   await user.destroy();
   res.json({ message: '已刪除' });
+});
+
+// ============ Admin: Message Templates ============
+
+app.get('/api/admin/message-templates', authMiddleware, async (req, res) => {
+  const templates = await MessageTemplate.findAll({ order: [['key', 'ASC']] });
+  res.json(templates);
+});
+
+app.get('/api/admin/message-templates/:key', authMiddleware, async (req, res) => {
+  const tpl = await MessageTemplate.findOne({ where: { key: req.params.key } });
+  if (!tpl) return res.status(404).json({ error: '模板不存在' });
+  res.json(tpl);
+});
+
+app.put('/api/admin/message-templates/:key', authMiddleware, async (req, res) => {
+  const tpl = await MessageTemplate.findOne({ where: { key: req.params.key } });
+  if (!tpl) return res.status(404).json({ error: '模板不存在' });
+  const allowed = ['name', 'description', 'enabled', 'channel', 'content', 'flexJson', 'variables'];
+  const update = {};
+  for (const k of allowed) {
+    if (req.body[k] !== undefined) update[k] = req.body[k];
+  }
+  update.updatedBy = req.user.username || 'admin';
+  await tpl.update(update);
+  res.json(tpl);
+});
+
+app.post('/api/admin/message-templates/:key/preview', authMiddleware, async (req, res) => {
+  try {
+    const tpl = await MessageTemplate.findOne({ where: { key: req.params.key } });
+    if (!tpl) return res.status(404).json({ error: '模板不存在' });
+    // Allow previewing unsaved edits by passing draft in body.template
+    const draft = req.body?.template;
+    const merged = draft ? { ...tpl.toJSON(), ...draft } : tpl.toJSON();
+    const sample = { ...defaultSampleVars(), ...(req.body?.sampleData || {}) };
+    const rendered = renderFromTemplate(merged, sample, { ignoreEnabled: true });
+    if (!rendered) return res.status(400).json({ error: '無法渲染（請檢查 Flex JSON 是否有效）' });
+    res.json({ rendered, sampleData: sample });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/message-templates/:key/test-send', authMiddleware, async (req, res) => {
+  try {
+    const tpl = await MessageTemplate.findOne({ where: { key: req.params.key } });
+    if (!tpl) return res.status(404).json({ error: '模板不存在' });
+    const { channelAccessToken, targetId } = await resolveLineCredentials();
+    if (!channelAccessToken) return res.status(400).json({ error: '尚未設定 Channel Access Token' });
+    const to = req.body?.toUserId || targetId;
+    if (!to) return res.status(400).json({ error: '尚未設定推播對象 ID' });
+    const draft = req.body?.template;
+    const merged = draft ? { ...tpl.toJSON(), ...draft } : tpl.toJSON();
+    const sample = { ...defaultSampleVars(), ...(req.body?.sampleData || {}) };
+    const rendered = renderFromTemplate(merged, sample, { ignoreEnabled: true });
+    if (!rendered) return res.status(400).json({ error: '無法渲染訊息' });
+    const r = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${channelAccessToken}`
+      },
+      body: JSON.stringify({ to, messages: [rendered] })
+    });
+    if (!r.ok) {
+      const body = await r.text();
+      return res.status(400).json({ error: `推播失敗 (${r.status}): ${body}` });
+    }
+    res.json({ ok: true, message: `已發送測試訊息至 ${to === targetId ? '店家 LINE' : to}` });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// ============ Admin: LINE 推播配額 ============
+
+app.get('/api/admin/line/quota', authMiddleware, async (req, res) => {
+  try {
+    const { channelAccessToken } = await resolveLineCredentials();
+    if (!channelAccessToken) {
+      return res.json({ available: false, reason: 'no_token' });
+    }
+    const headers = { Authorization: `Bearer ${channelAccessToken}` };
+    const [qRes, cRes] = await Promise.all([
+      fetch('https://api.line.me/v2/bot/message/quota', { headers }),
+      fetch('https://api.line.me/v2/bot/message/quota/consumption', { headers })
+    ]);
+    if (!qRes.ok || !cRes.ok) {
+      return res.json({ available: false, reason: 'fetch_failed' });
+    }
+    const quota = await qRes.json();
+    const consumption = await cRes.json();
+    const limit = quota.type === 'limited' ? (quota.value || 0) : null;
+    const used = Number(consumption.totalUsage || 0);
+    res.json({
+      available: true,
+      type: quota.type,
+      quota: limit,
+      consumption: used,
+      remaining: limit == null ? null : Math.max(0, limit - used)
+    });
+  } catch (err) {
+    res.json({ available: false, error: err.message });
+  }
+});
+
+// ============ Admin: Broadcasts ============
+
+app.get('/api/admin/broadcasts', authMiddleware, async (req, res) => {
+  const broadcasts = await Broadcast.findAll({
+    order: [['createdAt', 'DESC']],
+    limit: 100
+  });
+  res.json(broadcasts);
+});
+
+app.get('/api/admin/broadcasts/:id', authMiddleware, async (req, res) => {
+  const b = await Broadcast.findByPk(req.params.id);
+  if (!b) return res.status(404).json({ error: '推播紀錄不存在' });
+  res.json(b);
+});
+
+async function resolveBroadcastTargets({ type, recipientUserIds, recipientTags }) {
+  if (type === 'all_followers') return null; // null = use /broadcast endpoint
+  if (type === 'single') {
+    if (!recipientUserIds?.length) return [];
+    const users = await User.findAll({
+      where: {
+        id: { [Op.in]: recipientUserIds },
+        lineUserId: { [Op.ne]: null },
+        blocked: false
+      }
+    });
+    return users.map(u => u.lineUserId);
+  }
+  if (type === 'tag') {
+    if (!recipientTags?.length) return [];
+    const tagClauses = recipientTags.map(tag =>
+      literal(`tags @> '${JSON.stringify([tag]).replace(/'/g, "''")}'`)
+    );
+    const users = await User.findAll({
+      where: {
+        lineUserId: { [Op.ne]: null },
+        blocked: false,
+        [Op.and]: [{ [Op.or]: tagClauses }]
+      }
+    });
+    return users.map(u => u.lineUserId);
+  }
+  return [];
+}
+
+function buildBroadcastMessage({ messageType, content, flexJson, imageUrl }) {
+  if (messageType === 'text') {
+    return { type: 'text', text: content };
+  }
+  if (messageType === 'flex') {
+    return { type: 'flex', altText: (content || '通知').slice(0, 400), contents: flexJson };
+  }
+  if (messageType === 'image') {
+    return { type: 'image', originalContentUrl: imageUrl, previewImageUrl: imageUrl };
+  }
+  throw new Error('unsupported message type');
+}
+
+app.post('/api/admin/broadcasts', authMiddleware, async (req, res) => {
+  const {
+    type,
+    recipientUserIds = [],
+    recipientTags = [],
+    messageType = 'text',
+    content = '',
+    flexJson,
+    imageUrl = ''
+  } = req.body || {};
+  if (!['single', 'tag', 'all_followers'].includes(type)) {
+    return res.status(400).json({ error: '推播類型無效' });
+  }
+  if (!['text', 'flex', 'image'].includes(messageType)) {
+    return res.status(400).json({ error: '訊息類型無效' });
+  }
+  if (messageType === 'text' && !content.trim()) {
+    return res.status(400).json({ error: '請填寫訊息內容' });
+  }
+  if (messageType === 'flex' && !flexJson) {
+    return res.status(400).json({ error: 'Flex JSON 不可空白' });
+  }
+  if (messageType === 'image' && !imageUrl) {
+    return res.status(400).json({ error: '請提供圖片網址' });
+  }
+
+  let message;
+  try {
+    message = buildBroadcastMessage({ messageType, content, flexJson, imageUrl });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  const { channelAccessToken } = await resolveLineCredentials();
+  if (!channelAccessToken) {
+    return res.status(400).json({ error: '尚未設定 LINE Channel Access Token' });
+  }
+
+  // Resolve targets
+  let targets;
+  try {
+    targets = await resolveBroadcastTargets({ type, recipientUserIds, recipientTags });
+  } catch (err) {
+    return res.status(400).json({ error: err.message });
+  }
+
+  const broadcast = await Broadcast.create({
+    type,
+    recipientUserIds: type === 'single' ? recipientUserIds : [],
+    recipientTags: type === 'tag' ? recipientTags : [],
+    messageType,
+    content,
+    flexJson: messageType === 'flex' ? flexJson : null,
+    imageUrl: imageUrl || '',
+    status: 'sending',
+    sentBy: req.user.username || 'admin'
+  });
+
+  let successCount = 0;
+  let failureCount = 0;
+  const failureDetails = [];
+
+  try {
+    if (type === 'all_followers') {
+      // LINE broadcast endpoint - free, no quota
+      const r = await fetch('https://api.line.me/v2/bot/message/broadcast', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${channelAccessToken}`
+        },
+        body: JSON.stringify({ messages: [message] })
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        failureDetails.push({ stage: 'broadcast', error: `${r.status}: ${body}` });
+        failureCount = 1;
+      } else {
+        successCount = 1;
+      }
+    } else if (!targets.length) {
+      failureDetails.push({ note: '無符合條件的收件人' });
+    } else if (type === 'single' && targets.length === 1) {
+      const r = await fetch('https://api.line.me/v2/bot/message/push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${channelAccessToken}`
+        },
+        body: JSON.stringify({ to: targets[0], messages: [message] })
+      });
+      if (!r.ok) {
+        const body = await r.text();
+        failureDetails.push({ userId: targets[0], error: `${r.status}: ${body}` });
+        failureCount = 1;
+      } else {
+        successCount = 1;
+      }
+    } else {
+      // Multicast batches of 500
+      for (let i = 0; i < targets.length; i += 500) {
+        const batch = targets.slice(i, i + 500);
+        const r = await fetch('https://api.line.me/v2/bot/message/multicast', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${channelAccessToken}`
+          },
+          body: JSON.stringify({ to: batch, messages: [message] })
+        });
+        if (!r.ok) {
+          const body = await r.text();
+          failureDetails.push({ batchSize: batch.length, error: `${r.status}: ${body}` });
+          failureCount += batch.length;
+        } else {
+          successCount += batch.length;
+        }
+      }
+    }
+  } catch (err) {
+    failureDetails.push({ error: err.message });
+    failureCount += targets?.length || 1;
+  }
+
+  const finalStatus =
+    successCount > 0 ? 'sent' : (failureCount > 0 ? 'failed' : 'sent');
+  await broadcast.update({
+    status: finalStatus,
+    successCount,
+    failureCount,
+    failureDetails,
+    sentAt: new Date()
+  });
+
+  res.json(broadcast);
+});
+
+app.delete('/api/admin/broadcasts/:id', authMiddleware, async (req, res) => {
+  const b = await Broadcast.findByPk(req.params.id);
+  if (!b) return res.status(404).json({ error: '推播紀錄不存在' });
+  if (!['draft', 'queued'].includes(b.status)) {
+    return res.status(400).json({ error: '已送出的推播僅能保留歷史，無法刪除' });
+  }
+  await b.destroy();
+  res.json({ message: '已刪除' });
+});
+
+// 後台用：列出所有已存在的 tags（拼湊客戶 tags 出現過的集合）
+app.get('/api/admin/user-tags', authMiddleware, async (req, res) => {
+  const users = await User.findAll({ attributes: ['tags'] });
+  const set = new Set();
+  for (const u of users) {
+    (u.tags || []).forEach(t => set.add(t));
+  }
+  res.json([...set].sort());
 });
 
 // ============ Admin: News ============
