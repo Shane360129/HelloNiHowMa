@@ -27,12 +27,14 @@ const sequelize = new Sequelize(DATABASE_URL || 'postgres://localhost:5432/la_pa
   pool: { max: 5, min: 0, acquire: 30000, idle: 10000 }
 });
 
-async function connectDB() {
+async function connectDB({ sync = true } = {}) {
   try {
     await sequelize.authenticate();
     console.log(`PostgreSQL connected${useSSL ? ' (SSL enabled)' : ''}`);
-    await sequelize.sync({ alter: true });
-    console.log('Schema synchronized');
+    if (sync) {
+      await sequelize.sync({ alter: true });
+      console.log('Schema synchronized');
+    }
   } catch (err) {
     console.error('PostgreSQL connection error:', err.message);
     process.exit(1);

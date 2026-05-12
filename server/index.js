@@ -17,7 +17,14 @@ const {
   News,
   User
 } = require('./models');
-const { notifyBooking, sendTestMessage } = require('./line');
+const {
+  notifyBookingCreated,
+  notifyBookingStatusChange,
+  sendTestMessage,
+  resolveCredentials: resolveLineCredentials
+} = require('./line');
+const { ensureDefaultTemplates } = require('./messageTemplates');
+const { verifySignature, handleEvent: handleWebhookEvent } = require('./lineWebhook');
 const {
   resolveLoginCredentials,
   buildState,
@@ -72,7 +79,11 @@ app.use(cors({
   credentials: true
 }));
 
-app.use(express.json({ limit: '25mb' }));
+// 捕捉 raw body 給 LINE webhook 做 HMAC 簽章驗證
+app.use(express.json({
+  limit: '25mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; }
+}));
 
 // ============ Rate Limiters ============
 
@@ -158,6 +169,29 @@ function signCustomerToken(user) {
     { expiresIn: '7d', audience: JWT_CUSTOMER_AUDIENCE }
   );
 }
+
+// ============ LINE Webhook ============
+//
+// 必須放在 cors / json 設定之後，但**不**套 rate limiter（LINE 平台會頻繁打）。
+// 我們在 express.json 設了 verify 函式把 raw body 存到 req.rawBody，用來
+// 做 HMAC 簽章驗證。
+//
+// 流程：驗簽 → 立刻回 200 → 非同步處理每筆 event。
+app.post('/api/line/webhook', async (req, res) => {
+  const signature = req.headers['x-line-signature'];
+  const { channelSecret } = await resolveLineCredentials();
+  if (!verifySignature(req.rawBody, signature, channelSecret)) {
+    console.warn('[webhook] invalid signature');
+    return res.status(401).end();
+  }
+  res.status(200).end();
+  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  for (const event of events) {
+    handleWebhookEvent(event).catch(err =>
+      console.error('[webhook] event error:', err?.message || err)
+    );
+  }
+});
 
 // ============ Health ============
 
@@ -299,7 +333,8 @@ app.post('/api/bookings', bookingLimiter, async (req, res) => {
     await user.update({ phone: phoneStr });
   }
 
-  notifyBooking(booking.toJSON()).catch(err => console.error('[LINE] notify error:', err));
+  // 走訊息模板系統推播（客戶 + 店家 Flex with action buttons）
+  notifyBookingCreated(booking, user).catch(err => console.error('[LINE] notify error:', err));
 
   res.status(201).json({
     id: booking.id,
@@ -617,18 +652,11 @@ app.post('/api/admin/bookings', authMiddleware, async (req, res) => {
     createdByAdminId: req.user?.sub ? Number(req.user.sub) : null
   });
 
-  // D2：建立時不推播店家通知（admin 自己建立的）
-  // D2：若 status 直接 = confirmed 且有 LINE userId，推「預約成功」訊息
+  // D2：建立時不推播店家通知（admin 自己建立的，admin 已知）
+  // D2：若 status 直接 = confirmed 且客戶有 LINE userId，走訊息模板推「預約成功」
   if (initialStatus === 'confirmed' && user.lineUserId) {
-    // Phase 4 會走訊息模板系統；目前 Phase 2 先簡單推一則確認訊息給客戶
-    const { resolveCredentials, pushText } = require('./line');
-    resolveCredentials().then(({ channelAccessToken }) => {
-      if (!channelAccessToken) return;
-      const text =
-        `${nameStr} 您好！您的預約已確認 ✨\n\n` +
-        `項目：${serviceStr}\n日期：${dateStr} ${timeStr}`;
-      return pushText(channelAccessToken, user.lineUserId, text);
-    }).catch(err => console.error('[LINE] admin booking notify error:', err.message));
+    notifyBookingStatusChange(booking, user, 'pending')
+      .catch(err => console.error('[LINE] admin booking notify error:', err.message));
   }
 
   res.status(201).json(booking);
@@ -649,26 +677,11 @@ app.patch('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
   const prevStatus = booking.status;
   await booking.update(update);
 
-  // D2：狀態切換時自動推播客戶
+  // D2：狀態切換時自動推播客戶（走訊息模板）
   if (update.status && update.status !== prevStatus && booking.userId) {
     const user = await User.findByPk(booking.userId);
-    if (user?.lineUserId) {
-      const { resolveCredentials, pushText } = require('./line');
-      let text = null;
-      if (update.status === 'confirmed') {
-        text = `${booking.name} 您好！您的預約已確認 ✨\n\n項目：${booking.service}\n日期：${booking.date} ${booking.time}`;
-      } else if (update.status === 'cancelled') {
-        text = `${booking.name} 您好，您 ${booking.date} ${booking.time} 的預約已取消。如有疑問請與我們聯絡。`;
-      } else if (update.status === 'completed') {
-        text = `${booking.name} 您好，感謝您的光臨 💕 期待下次與您相見！`;
-      }
-      if (text) {
-        resolveCredentials().then(({ channelAccessToken }) => {
-          if (!channelAccessToken) return;
-          return pushText(channelAccessToken, user.lineUserId, text);
-        }).catch(err => console.error('[LINE] status change notify error:', err.message));
-      }
-    }
+    notifyBookingStatusChange(booking, user, prevStatus)
+      .catch(err => console.error('[LINE] status change notify error:', err.message));
   }
 
   res.json(booking);
@@ -877,6 +890,7 @@ if (process.env.NODE_ENV === 'production') {
 connectDB().then(async () => {
   await initAdmin();
   await initSettings();
+  await ensureDefaultTemplates();
   app.listen(PORT, () => {
     console.log(`La Paisley server running on port ${PORT}`);
   });

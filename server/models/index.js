@@ -9,6 +9,8 @@ const Booking = require('./Booking');
 const Setting = require('./Setting');
 const News = require('./News');
 const User = require('./User');
+const MessageTemplate = require('./MessageTemplate');
+const LineWebhookEvent = require('./LineWebhookEvent');
 
 // ====== Associations ======
 
@@ -26,5 +28,7 @@ module.exports = {
   Booking,
   Setting,
   News,
-  User
+  User,
+  MessageTemplate,
+  LineWebhookEvent
 };

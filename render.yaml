@@ -51,3 +51,25 @@ services:
       # === 預約時區 ===
       - key: BOOKING_TZ_OFFSET_MINUTES
         value: "480"
+
+  # ─────────────────────────────────────────────────────────────
+  # Cron：預約提醒（D3）
+  # 每整點執行一次；程式內讀 settings.reminderTime 決定是否真正發送，
+  # 店家在後台改提醒時間 → 同日下個整點生效，無需重新部署。
+  - type: cron
+    name: la-paisley-reminders
+    runtime: node
+    schedule: "0 * * * *"
+    buildCommand: cd server && npm install
+    startCommand: cd server && node jobs/sendReminders.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      - key: LINE_MESSAGING_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: BOOKING_TZ_OFFSET_MINUTES
+        value: "480"
