@@ -206,19 +206,28 @@ app.post('/api/line/webhook', async (req, res) => {
 
 app.get('/api/health', async (req, res) => {
   const startedAt = Date.now();
-  let dbOk = false;
+  const checks = {
+    db: false,
+    templates: 0,
+    settingsConfigured: false,
+    lastWebhookAt: null
+  };
   try {
-    await Setting.findOne({ attributes: ['id'] });
-    dbOk = true;
+    const setting = await Setting.findOne({ attributes: ['id', 'lineChannelAccessToken', 'lineLoginChannelId'] });
+    checks.db = true;
+    checks.settingsConfigured = !!(setting?.lineChannelAccessToken && setting?.lineLoginChannelId);
+    checks.templates = await MessageTemplate.count();
+    const last = await LineWebhookEvent.findOne({ order: [['createdAt', 'DESC']], attributes: ['createdAt'] });
+    checks.lastWebhookAt = last?.createdAt || null;
   } catch (err) {
     console.error('[health] db check failed:', err.message);
   }
-  res.status(dbOk ? 200 : 503).json({
-    status: dbOk ? 'ok' : 'degraded',
+  res.status(checks.db ? 200 : 503).json({
+    status: checks.db ? 'ok' : 'degraded',
     uptime: process.uptime(),
-    db: dbOk,
     responseTimeMs: Date.now() - startedAt,
-    version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'dev'
+    version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'dev',
+    ...checks
   });
 });
 
@@ -1446,7 +1455,37 @@ if (process.env.NODE_ENV === 'production') {
   });
 }
 
+function logStartupConfig() {
+  const isProd = process.env.NODE_ENV === 'production';
+  const checks = [
+    ['DATABASE_URL', !!process.env.DATABASE_URL, true],
+    ['JWT_SECRET', !!process.env.JWT_SECRET, isProd],
+    ['ALLOWED_ORIGINS', !!process.env.ALLOWED_ORIGINS, isProd],
+    ['LINE_MESSAGING_CHANNEL_ACCESS_TOKEN', !!process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN, false],
+    ['LINE_MESSAGING_CHANNEL_SECRET', !!process.env.LINE_MESSAGING_CHANNEL_SECRET, false],
+    ['LINE_TARGET_ID', !!process.env.LINE_TARGET_ID, false],
+    ['LINE_LOGIN_CHANNEL_ID', !!process.env.LINE_LOGIN_CHANNEL_ID, false],
+    ['LINE_LOGIN_CHANNEL_SECRET', !!process.env.LINE_LOGIN_CHANNEL_SECRET, false],
+    ['LINE_LOGIN_CALLBACK_URL', !!process.env.LINE_LOGIN_CALLBACK_URL, false],
+    ['LINE_LIFF_ID', !!process.env.LINE_LIFF_ID, false],
+    ['BOOKING_TZ_OFFSET_MINUTES', !!process.env.BOOKING_TZ_OFFSET_MINUTES, false]
+  ];
+  console.log('────────────────────────────────');
+  console.log('  La Paisley starting…');
+  console.log(`  Node:    ${process.version}`);
+  console.log(`  Env:     ${process.env.NODE_ENV || 'development'}`);
+  console.log(`  Port:    ${PORT}`);
+  console.log('  Env vars:');
+  for (const [name, present, required] of checks) {
+    const flag = present ? '  ✓' : (required ? '  ✗ MISSING' : '  ○ optional');
+    console.log(`   ${flag}  ${name}`);
+  }
+  console.log('  (LINE 設定也可在後台「系統設定」填入；覆寫優先序：env > DB)');
+  console.log('────────────────────────────────');
+}
+
 connectDB().then(async () => {
+  logStartupConfig();
   await initAdmin();
   await initSettings();
   await ensureDefaultTemplates();
