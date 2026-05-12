@@ -4,7 +4,10 @@ async function handle(res, errMsg) {
   if (!res.ok) {
     let body = {};
     try { body = await res.json(); } catch { /* empty */ }
-    throw new Error(body.error || errMsg);
+    const err = new Error(body.error || errMsg);
+    err.code = body.code;
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -15,6 +18,13 @@ function authHeaders() {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`
   };
+}
+
+function customerHeaders() {
+  const token = localStorage.getItem('customer_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 /* Public */
@@ -41,10 +51,31 @@ export async function fetchPublicSettings() {
 export async function createBooking(booking) {
   const res = await fetch(`${API}/api/bookings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: customerHeaders(),
     body: JSON.stringify(booking)
   });
   return handle(res, '預約送出失敗，請稍後再試');
+}
+
+/* Customer: My Bookings */
+export async function fetchMyBookings() {
+  const res = await fetch(`${API}/api/me/bookings`, { headers: customerHeaders() });
+  return handle(res, '載入失敗');
+}
+export async function cancelMyBooking(id) {
+  const res = await fetch(`${API}/api/me/bookings/${id}/cancel`, {
+    method: 'PATCH',
+    headers: customerHeaders()
+  });
+  return handle(res, '取消失敗');
+}
+export async function updateMyProfile(payload) {
+  const res = await fetch(`${API}/api/me/profile`, {
+    method: 'PATCH',
+    headers: customerHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
 }
 export async function fetchMonthAvailability(year, month, service) {
   const qs = new URLSearchParams({ year, month });
@@ -156,6 +187,14 @@ export async function fetchBookings(status) {
   });
   return handle(res, '載入失敗');
 }
+export async function createAdminBooking(payload) {
+  const res = await fetch(`${API}/api/admin/bookings`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '建立失敗');
+}
 export async function updateBooking(id, data) {
   const res = await fetch(`${API}/api/admin/bookings/${id}`, {
     method: 'PATCH',
@@ -166,6 +205,155 @@ export async function updateBooking(id, data) {
 }
 export async function deleteBooking(id) {
   const res = await fetch(`${API}/api/admin/bookings/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
+/* Admin: Users (LINE 客戶 + 走入客戶) */
+export async function fetchAdminUsers(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, v); });
+  const res = await fetch(`${API}/api/admin/users${qs.toString() ? `?${qs}` : ''}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入用戶失敗');
+}
+export async function fetchAdminUser(id) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, { headers: authHeaders() });
+  return handle(res, '載入用戶失敗');
+}
+export async function lookupUserByPhone(phone) {
+  const res = await fetch(`${API}/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '查詢失敗');
+}
+export async function updateAdminUser(id, payload) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
+}
+export async function createAdminUser(payload) {
+  const res = await fetch(`${API}/api/admin/users`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '建立失敗');
+}
+export async function deleteAdminUser(id) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
+/* Admin: Message Templates */
+export async function fetchMessageTemplates() {
+  const res = await fetch(`${API}/api/admin/message-templates`, { headers: authHeaders() });
+  return handle(res, '載入模板失敗');
+}
+export async function fetchMessageTemplate(key) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}`, { headers: authHeaders() });
+  return handle(res, '載入模板失敗');
+}
+export async function updateMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
+}
+export async function previewMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}/preview`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '預覽失敗');
+}
+export async function testSendMessageTemplate(key, payload) {
+  const res = await fetch(`${API}/api/admin/message-templates/${key}/test-send`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '測試發送失敗');
+}
+
+/* Admin: Broadcasts */
+export async function fetchBroadcasts() {
+  const res = await fetch(`${API}/api/admin/broadcasts`, { headers: authHeaders() });
+  return handle(res, '載入失敗');
+}
+export async function createBroadcast(payload) {
+  const res = await fetch(`${API}/api/admin/broadcasts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '推播失敗');
+}
+export async function deleteBroadcast(id) {
+  const res = await fetch(`${API}/api/admin/broadcasts/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+export async function fetchLineQuota() {
+  const res = await fetch(`${API}/api/admin/line/quota`, { headers: authHeaders() });
+  return handle(res, '查詢配額失敗');
+}
+export async function fetchAdminUserTags() {
+  const res = await fetch(`${API}/api/admin/user-tags`, { headers: authHeaders() });
+  return handle(res, '載入標籤失敗');
+}
+
+/* Admin: Dashboard */
+export async function fetchDashboardStats() {
+  const res = await fetch(`${API}/api/admin/dashboard/stats`, { headers: authHeaders() });
+  return handle(res, '載入統計資料失敗');
+}
+
+/* Admin: Audit logs */
+export async function fetchAuditLogs(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, v); });
+  const res = await fetch(`${API}/api/admin/audit-logs${qs.toString() ? `?${qs}` : ''}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入稽核日誌失敗');
+}
+
+/* Admin: LINE Rich Menus */
+export async function fetchRichMenus() {
+  const res = await fetch(`${API}/api/admin/line/richmenus`, { headers: authHeaders() });
+  return handle(res, '載入 Rich Menu 失敗');
+}
+export async function setDefaultRichMenu(id) {
+  const res = await fetch(`${API}/api/admin/line/richmenus/${id}/set-default`, {
+    method: 'POST',
+    headers: authHeaders()
+  });
+  return handle(res, '設定預設失敗');
+}
+export async function clearDefaultRichMenu() {
+  const res = await fetch(`${API}/api/admin/line/richmenus/default`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '清除預設失敗');
+}
+export async function deleteRichMenu(id) {
+  const res = await fetch(`${API}/api/admin/line/richmenus/${id}`, {
     method: 'DELETE',
     headers: authHeaders()
   });

@@ -14,6 +14,8 @@ export default function Settings() {
   const [pwNew, setPwNew] = useState('');
   const [pwMsg, setPwMsg] = useState('');
 
+  const [adminLineDraft, setAdminLineDraft] = useState('');
+
   useEffect(() => {
     fetchSettings().then(setSettings).catch(err => setError(err.message));
   }, []);
@@ -98,18 +100,138 @@ export default function Settings() {
           </label>
         </div>
 
+        <h3>預約規則</h3>
+        <div className="alert alert-info" style={{ marginTop: 0 }}>
+          這些規則會影響前台預約頁的可選時段與取消限制。
+        </div>
+        <div className="form-group checkbox-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.lineLoginRequired !== false}
+              onChange={e => update('lineLoginRequired', e.target.checked)}
+            />
+            強制要求 LINE 登入才能預約（D1）
+          </label>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>預設預約時長（分鐘）</label>
+            <input
+              type="number"
+              min="15"
+              step="15"
+              value={settings.defaultBookingDuration || 210}
+              onChange={e => update('defaultBookingDuration', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>時段間隔（分鐘）</label>
+            <input
+              type="number"
+              min="15"
+              step="15"
+              value={settings.slotInterval || 30}
+              onChange={e => update('slotInterval', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>前後緩衝（分鐘）</label>
+            <input
+              type="number"
+              min="0"
+              step="5"
+              value={settings.bookingBufferMinutes ?? 0}
+              onChange={e => update('bookingBufferMinutes', Number(e.target.value))}
+            />
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>最早可預約（幾天後）</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.bookingEarliestDays ?? 1}
+              onChange={e => update('bookingEarliestDays', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>最晚可預約（幾小時前）</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.bookingLatestHours ?? 24}
+              onChange={e => update('bookingLatestHours', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>取消時限（幾小時前可取消）</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.bookingCancelHoursLimit ?? 24}
+              onChange={e => update('bookingCancelHoursLimit', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>每人每週上限（0=不限）</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.bookingPerUserPerWeek ?? 0}
+              onChange={e => update('bookingPerUserPerWeek', Number(e.target.value))}
+            />
+          </div>
+        </div>
+
         <h3>預約時段設定</h3>
         <ScheduleEditor settings={settings} onChange={update} />
 
-        <h3>LINE 通知</h3>
+        <h3>提醒設定</h3>
+        <div className="form-group checkbox-group">
+          <label>
+            <input
+              type="checkbox"
+              checked={settings.reminderEnabled !== false}
+              onChange={e => update('reminderEnabled', e.target.checked)}
+            />
+            啟用自動預約提醒（D3）
+          </label>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>提醒發送時間</label>
+            <input
+              type="time"
+              value={settings.reminderTime || '10:00'}
+              onChange={e => update('reminderTime', e.target.value)}
+            />
+            <div style={{ fontSize: '0.78rem', color: 'var(--text-light)', marginTop: 4 }}>
+              修改後同日下個整點生效，不需重新部署
+            </div>
+          </div>
+          <div className="form-group">
+            <label>提前幾天提醒</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.reminderLeadDays ?? 1}
+              onChange={e => update('reminderLeadDays', Number(e.target.value))}
+            />
+          </div>
+        </div>
+
+        <h3>LINE Messaging API（店家通知）</h3>
         <div className="alert alert-info" style={{ marginTop: 0 }}>
-          <div>以下任一種方式皆可：</div>
+          <div>新預約建立時會自動推播到店家 LINE。請於 LINE Developers Console 取得：</div>
           <ul style={{ paddingLeft: '1.2rem', marginTop: '0.3rem' }}>
-            <li><strong>LINE Messaging API</strong>（推薦）：填入 Channel Access Token 與推播對象 ID（userId / groupId）</li>
-            <li><strong>LINE Notify</strong>（舊制）：填入個人發行的 Notify Token</li>
+            <li>Channel Access Token（長效）</li>
+            <li>Channel Secret（webhook 簽章驗證用）</li>
+            <li>推播對象 userId / groupId</li>
           </ul>
           <div style={{ fontSize: '0.8rem', marginTop: '0.4rem' }}>
-            也可改用環境變數：LINE_CHANNEL_ACCESS_TOKEN / LINE_TARGET_ID / LINE_NOTIFY_TOKEN
+            也可改用環境變數：LINE_MESSAGING_CHANNEL_ACCESS_TOKEN / LINE_MESSAGING_CHANNEL_SECRET / LINE_TARGET_ID
           </div>
         </div>
         <div className="form-row">
@@ -123,8 +245,87 @@ export default function Settings() {
           </div>
         </div>
         <div className="form-group">
-          <label>LINE Notify Token（舊制備援）</label>
-          <input value={settings.lineNotifyToken || ''} onChange={e => update('lineNotifyToken', e.target.value)} />
+          <label>Channel Secret（webhook 簽章驗證）</label>
+          <input value={settings.lineChannelSecret || ''} onChange={e => update('lineChannelSecret', e.target.value)} placeholder="可留空，Phase 4 啟用 webhook 時填入" />
+        </div>
+
+        <h3>LINE Login（客戶登入）</h3>
+        <div className="alert alert-info" style={{ marginTop: 0 }}>
+          <div>客戶用 LINE 註冊/登入預約頁所需的憑證。請於 LINE Developers Console 建立 LINE Login Channel + LIFF App：</div>
+          <div style={{ fontSize: '0.8rem', marginTop: '0.4rem' }}>
+            也可改用環境變數：LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / LINE_LIFF_ID
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>LINE Login Channel ID</label>
+            <input value={settings.lineLoginChannelId || ''} onChange={e => update('lineLoginChannelId', e.target.value)} placeholder="2001234567" />
+          </div>
+          <div className="form-group">
+            <label>LINE Login Channel Secret</label>
+            <input value={settings.lineLoginChannelSecret || ''} onChange={e => update('lineLoginChannelSecret', e.target.value)} />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>LIFF ID</label>
+          <input value={settings.lineLiffId || ''} onChange={e => update('lineLiffId', e.target.value)} placeholder="2001234567-AbCdEfGh" />
+        </div>
+
+        <h3>店家 LINE 內一鍵確認預約（D4 / 白名單）</h3>
+        <div className="alert alert-info" style={{ marginTop: 0 }}>
+          列在白名單內的 LINE userId，可以在 LINE 訊息中直接點 [確認]/[取消] 按鈕更新預約狀態。
+          請使用 LINE Login 後從 <code>/api/auth/me</code> 取得自己的 userId 填入。
+        </div>
+        <div className="form-group">
+          <label>店員 LINE userId 白名單</label>
+          <div className="tag-list">
+            {(settings.adminLineUserIds || []).map(uid => (
+              <span key={uid} className="tag-chip">
+                {uid.length > 16 ? uid.slice(0, 12) + '…' : uid}
+                <button
+                  type="button"
+                  onClick={() => update('adminLineUserIds', settings.adminLineUserIds.filter(x => x !== uid))}
+                >×</button>
+              </span>
+            ))}
+            <input
+              className="tag-input"
+              placeholder="U… 後按 Enter"
+              value={adminLineDraft}
+              onChange={e => setAdminLineDraft(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  const t = adminLineDraft.trim();
+                  if (t && !(settings.adminLineUserIds || []).includes(t)) {
+                    update('adminLineUserIds', [...(settings.adminLineUserIds || []), t]);
+                  }
+                  setAdminLineDraft('');
+                }
+              }}
+            />
+          </div>
+        </div>
+
+        <h3>進階</h3>
+        <div className="form-row">
+          <div className="form-group">
+            <label>推播配額警告閾值（剩 N 則時警告）</label>
+            <input
+              type="number"
+              min="0"
+              value={settings.pushQuotaWarnThreshold ?? 50}
+              onChange={e => update('pushQuotaWarnThreshold', Number(e.target.value))}
+            />
+          </div>
+          <div className="form-group">
+            <label>Google Analytics ID（D10）</label>
+            <input
+              value={settings.googleAnalyticsId || ''}
+              onChange={e => update('googleAnalyticsId', e.target.value)}
+              placeholder="G-XXXXXXXXXX"
+            />
+          </div>
         </div>
 
         <div className="form-actions">
