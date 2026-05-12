@@ -4,7 +4,10 @@ async function handle(res, errMsg) {
   if (!res.ok) {
     let body = {};
     try { body = await res.json(); } catch { /* empty */ }
-    throw new Error(body.error || errMsg);
+    const err = new Error(body.error || errMsg);
+    err.code = body.code;
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -15,6 +18,13 @@ function authHeaders() {
     'Content-Type': 'application/json',
     Authorization: `Bearer ${token}`
   };
+}
+
+function customerHeaders() {
+  const token = localStorage.getItem('customer_token');
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
 }
 
 /* Public */
@@ -41,10 +51,31 @@ export async function fetchPublicSettings() {
 export async function createBooking(booking) {
   const res = await fetch(`${API}/api/bookings`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: customerHeaders(),
     body: JSON.stringify(booking)
   });
   return handle(res, '預約送出失敗，請稍後再試');
+}
+
+/* Customer: My Bookings */
+export async function fetchMyBookings() {
+  const res = await fetch(`${API}/api/me/bookings`, { headers: customerHeaders() });
+  return handle(res, '載入失敗');
+}
+export async function cancelMyBooking(id) {
+  const res = await fetch(`${API}/api/me/bookings/${id}/cancel`, {
+    method: 'PATCH',
+    headers: customerHeaders()
+  });
+  return handle(res, '取消失敗');
+}
+export async function updateMyProfile(payload) {
+  const res = await fetch(`${API}/api/me/profile`, {
+    method: 'PATCH',
+    headers: customerHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
 }
 export async function fetchMonthAvailability(year, month, service) {
   const qs = new URLSearchParams({ year, month });
@@ -155,6 +186,14 @@ export async function fetchBookings(status) {
     headers: authHeaders()
   });
   return handle(res, '載入失敗');
+}
+export async function createAdminBooking(payload) {
+  const res = await fetch(`${API}/api/admin/bookings`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '建立失敗');
 }
 export async function updateBooking(id, data) {
   const res = await fetch(`${API}/api/admin/bookings/${id}`, {

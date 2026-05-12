@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { fetchProfile, fetchServices, fetchPublicSettings, createBooking } from '../context/api';
+import { useCustomerAuth } from '../context/CustomerAuthContext';
 import Footer from '../components/Footer';
 import BookingCalendar from '../components/BookingCalendar';
 
@@ -10,13 +11,14 @@ const STEPS = [
 ];
 
 export default function Booking() {
+  const { user: customer, loginWithLine, loading: customerLoading, refreshMe } = useCustomerAuth();
+
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
   const [settings, setSettings] = useState(null);
   const [form, setForm] = useState({
     name: '',
     phone: '',
-    lineId: '',
     service: '',
     date: '',
     time: '',
@@ -35,6 +37,17 @@ export default function Booking() {
     });
     fetchPublicSettings().then(setSettings);
   }, []);
+
+  // 自動帶入已登入用戶資料
+  useEffect(() => {
+    if (customer) {
+      setForm(prev => ({
+        ...prev,
+        name: prev.name || customer.displayName || '',
+        phone: prev.phone || customer.phone || ''
+      }));
+    }
+  }, [customer]);
 
   const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -58,7 +71,13 @@ export default function Booking() {
       const res = await createBooking(form);
       setMessage(res.message || '預約已送出，感謝您！');
       setSubmitted(true);
+      // 重新整理用戶資料（後端可能補登了電話）
+      refreshMe().catch(() => {});
     } catch (err) {
+      if (err.code === 'LINE_LOGIN_REQUIRED') {
+        loginWithLine();
+        return;
+      }
       setError(err.message);
     } finally {
       setLoading(false);
@@ -66,6 +85,8 @@ export default function Booking() {
   };
 
   const bookingDisabled = settings && settings.bookingEnabled === false;
+  const loginRequired = settings && settings.lineLoginRequired !== false;
+  const needsLogin = loginRequired && !customer && !customerLoading;
   const activeStep = !form.service || !form.date || !form.time ? 0
     : !form.name || !form.phone ? 1 : 2;
 
@@ -86,6 +107,17 @@ export default function Booking() {
               <div className="alert alert-info">
                 目前暫停線上預約，請直接透過 LINE 或電話聯繫我們。
               </div>
+            </div>
+          ) : needsLogin ? (
+            <div className="login-required-card">
+              <h2>請先以 LINE 登入</h2>
+              <p>
+                為了方便日後與您聯繫、提供預約提醒，<br/>
+                預約前請使用 LINE 帳號登入。
+              </p>
+              <button type="button" className="btn btn-line btn-lg" onClick={() => loginWithLine('/booking')}>
+                <span className="line-icon">L</span> 以 LINE 登入
+              </button>
             </div>
           ) : submitted ? (
             <div className="booking-wrap">
@@ -157,7 +189,9 @@ export default function Booking() {
                 <div className="booking-card">
                   <h2 className="booking-card-title">聯絡資訊</h2>
                   <p className="booking-card-sub">
-                    留下聯繫方式，我們會盡快以 LINE 或電話與您確認。
+                    {customer
+                      ? `以 ${customer.displayName} 身份預約，可修改下方資料`
+                      : '留下聯繫方式，我們會盡快以 LINE 或電話與您確認。'}
                   </p>
 
                   {error && <div className="alert alert-error">{error}</div>}
@@ -171,11 +205,6 @@ export default function Booking() {
                       <label>聯絡電話 *</label>
                       <input value={form.phone} onChange={e => update('phone', e.target.value)} required />
                     </div>
-                  </div>
-
-                  <div className="form-group">
-                    <label>LINE ID（選填）</label>
-                    <input value={form.lineId} onChange={e => update('lineId', e.target.value)} placeholder="方便我們後續聯繫您" />
                   </div>
 
                   <div className="form-group">

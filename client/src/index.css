@@ -1087,3 +1087,147 @@ a.news-card:hover {
   .schedule-range { padding: 0.15rem 0.4rem; }
   .schedule-time-select { font-size: 0.88rem; padding: 0.2rem 0.3rem; }
 }
+
+/* === LINE Login + User Menu === */
+
+.btn-line {
+  background: #06c755;
+  border-color: #06c755;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.btn-line:hover { background: #05a445; border-color: #05a445; color: #fff; }
+.btn-line .line-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  background: #fff;
+  color: #06c755;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.user-menu { position: relative; }
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--primary-light);
+  color: inherit;
+  padding: 0.25rem 0.6rem 0.25rem 0.3rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+}
+.user-menu-trigger:hover { background: rgba(197, 162, 117, 0.08); }
+.user-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+.user-avatar-fallback {
+  background: var(--primary);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+}
+.user-name { font-size: 0.9rem; max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  background: #fff;
+  border: 1px solid #e6dccc;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+  min-width: 160px;
+  z-index: 100;
+  padding: 0.3rem;
+  display: flex;
+  flex-direction: column;
+}
+.user-menu-dropdown a,
+.user-menu-dropdown button {
+  display: block;
+  padding: 0.55rem 0.8rem;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: none;
+}
+.user-menu-dropdown a:hover,
+.user-menu-dropdown button:hover { background: rgba(197, 162, 117, 0.12); }
+
+/* === Login required prompt === */
+
+.login-required-card {
+  max-width: 480px;
+  margin: 3rem auto;
+  text-align: center;
+  padding: 2.5rem 1.8rem;
+  background: #fff;
+  border: 1px solid #efe6d6;
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+}
+.login-required-card h2 { margin: 0 0 0.6rem; font-size: 1.4rem; color: var(--primary-dark); }
+.login-required-card p { color: #777; margin: 0 0 1.5rem; line-height: 1.6; }
+
+/* === My Bookings === */
+
+.my-bookings-list { display: grid; gap: 1rem; }
+.my-booking-card {
+  background: #fff;
+  border: 1px solid #efe6d6;
+  border-radius: 14px;
+  padding: 1.2rem 1.4rem;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1rem;
+}
+.my-booking-meta { display: flex; flex-direction: column; gap: 0.35rem; }
+.my-booking-title { font-weight: 600; font-size: 1.05rem; }
+.my-booking-date { color: #888; font-size: 0.9rem; }
+.my-booking-status {
+  display: inline-block;
+  padding: 0.2rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: #f0e8d6;
+  color: var(--primary-dark);
+  align-self: flex-start;
+}
+.my-booking-status.confirmed { background: #d4ecd4; color: #2e6f2e; }
+.my-booking-status.completed { background: #e0e0e0; color: #555; }
+.my-booking-status.cancelled { background: #f3d4d4; color: #8c2e2e; }
+.my-booking-tabs { display: flex; gap: 0.4rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+.my-booking-tabs button {
+  background: transparent;
+  border: 1px solid var(--primary-light);
+  color: var(--primary-dark);
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+}
+.my-booking-tabs button.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
