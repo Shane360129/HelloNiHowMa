@@ -5,7 +5,8 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
-const { connectDB } = require('./db');
+const { Op, literal } = require('sequelize');
+const { connectDB, sequelize } = require('./db');
 const {
   Admin,
   Profile,
@@ -677,6 +678,127 @@ app.delete('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
   const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
   await booking.destroy();
+  res.json({ message: '已刪除' });
+});
+
+// ============ Admin: Users (LINE 客戶 + 走入客戶) ============
+
+app.get('/api/admin/users', authMiddleware, async (req, res) => {
+  const { source, search, tag, blocked, hasLine } = req.query;
+  const where = {};
+  if (source) where.source = source;
+  if (blocked === 'true') where.blocked = true;
+  if (blocked === 'false') where.blocked = false;
+  if (hasLine === 'true') where.lineUserId = { [Op.ne]: null };
+  if (hasLine === 'false') where.lineUserId = null;
+  if (search) {
+    const term = `%${search.trim()}%`;
+    where[Op.or] = [
+      { displayName: { [Op.iLike]: term } },
+      { phone: { [Op.iLike]: term } },
+      { lineUserId: { [Op.iLike]: term } },
+      { email: { [Op.iLike]: term } }
+    ];
+  }
+  // 標籤過濾用 PostgreSQL JSONB containment
+  const include = [];
+  if (tag) {
+    include.push(literal(`tags @> '${JSON.stringify([tag]).replace(/'/g, "''")}'`));
+  }
+
+  const users = await User.findAll({
+    where: include.length ? { [Op.and]: [where, ...include] } : where,
+    attributes: {
+      include: [
+        [literal('(SELECT COUNT(*)::int FROM bookings WHERE bookings."userId" = "User".id)'), 'bookingCount'],
+        [literal('(SELECT MAX(date) FROM bookings WHERE bookings."userId" = "User".id)'), 'lastBookingDate']
+      ]
+    },
+    order: [['createdAt', 'DESC']],
+    limit: 500
+  });
+  res.json(users);
+});
+
+// 後台代客預約時，用電話搜尋已存在的 User + 最近預約
+app.get('/api/admin/users/lookup', authMiddleware, async (req, res) => {
+  const phone = String(req.query.phone || '').trim();
+  if (!phone) return res.json({ user: null, recentBookings: [] });
+  const user = await User.findOne({ where: { phone } });
+  let recentBookings = [];
+  if (user) {
+    recentBookings = await Booking.findAll({
+      where: { userId: user.id },
+      order: [['date', 'DESC'], ['time', 'DESC']],
+      limit: 10
+    });
+  } else {
+    // 沒有 User 但歷史上可能有同電話的匿名預約（理論上 D8 之後不該發生，但保留相容）
+    recentBookings = await Booking.findAll({
+      where: { phone },
+      order: [['date', 'DESC'], ['time', 'DESC']],
+      limit: 10
+    });
+  }
+  res.json({ user, recentBookings });
+});
+
+app.get('/api/admin/users/:id', authMiddleware, async (req, res) => {
+  const user = await User.findByPk(req.params.id);
+  if (!user) return res.status(404).json({ error: '用戶不存在' });
+  const bookings = await Booking.findAll({
+    where: { userId: user.id },
+    order: [['date', 'DESC'], ['time', 'DESC']]
+  });
+  res.json({ user, bookings });
+});
+
+app.patch('/api/admin/users/:id', authMiddleware, async (req, res) => {
+  const allowed = ['displayName', 'phone', 'email', 'tags', 'notes', 'blocked', 'reminderOptIn'];
+  const update = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) update[key] = req.body[key];
+  }
+  const user = await User.findByPk(req.params.id);
+  if (!user) return res.status(404).json({ error: '用戶不存在' });
+  await user.update(update);
+  res.json(user);
+});
+
+app.post('/api/admin/users', authMiddleware, async (req, res) => {
+  const { displayName, phone, email, source, notes, tags } = req.body || {};
+  if (!displayName || !phone) {
+    return res.status(400).json({ error: '請填寫姓名與電話' });
+  }
+  if (source && !['walk_in', 'phone', 'dm'].includes(source)) {
+    return res.status(400).json({ error: '來源無效' });
+  }
+  const existing = await User.findOne({ where: { phone: String(phone).trim() } });
+  if (existing) {
+    return res.status(409).json({
+      error: '此電話已有對應的客戶資料',
+      existingUser: existing
+    });
+  }
+  const user = await User.create({
+    lineUserId: null,
+    source: source || 'walk_in',
+    displayName: String(displayName).trim(),
+    phone: String(phone).trim(),
+    email: email ? String(email).trim() : '',
+    notes: notes || '',
+    tags: Array.isArray(tags) ? tags : [],
+    createdByAdminId: req.user?.sub ? Number(req.user.sub) : null
+  });
+  res.status(201).json(user);
+});
+
+app.delete('/api/admin/users/:id', authMiddleware, async (req, res) => {
+  const user = await User.findByPk(req.params.id);
+  if (!user) return res.status(404).json({ error: '用戶不存在' });
+  // 將 user 的 booking userId 設為 null，保留預約紀錄
+  await Booking.update({ userId: null }, { where: { userId: user.id } });
+  await user.destroy();
   res.json({ message: '已刪除' });
 });
 

@@ -1231,3 +1231,206 @@ a.news-card:hover {
   border-color: var(--primary);
   color: #fff;
 }
+
+/* === Admin: Drawer === */
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+.drawer {
+  background: #fff;
+  width: 100%;
+  max-width: 480px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 24px rgba(0,0,0,0.15);
+}
+.drawer-wide { max-width: 640px; }
+.drawer-header {
+  padding: 1.2rem 1.5rem 0.6rem;
+  border-bottom: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.drawer-header h2 { margin: 0; font-size: 1.2rem; }
+.drawer-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: #888;
+  padding: 0 0.4rem;
+}
+.drawer-close:hover { color: #333; }
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.2rem 1.5rem;
+}
+.drawer-footer {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #eee;
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* === Admin: Source / status / tag badges === */
+
+.source-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: #eee;
+  color: #555;
+  white-space: nowrap;
+}
+.source-badge.badge-line { background: #d6efdc; color: #1f7a3e; }
+.source-badge.badge-walkin { background: #f3e1c3; color: #8a5e0e; }
+.source-badge.badge-phone { background: #d6e3f7; color: #2e5b9e; }
+.source-badge.badge-dm { background: #ecdcf2; color: #6b3084; }
+
+.badge-block {
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: #f3d4d4;
+  color: #8c2e2e;
+  font-size: 0.7rem;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid #e0d6c0;
+  border-radius: 8px;
+  padding: 0.4rem 0.5rem;
+  background: #fff;
+}
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+.tag-chip button {
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 0;
+}
+.tag-input {
+  flex: 1;
+  min-width: 100px;
+  border: none;
+  outline: none;
+  padding: 0.2rem;
+  background: transparent;
+  font: inherit;
+}
+
+/* === Admin: User stats === */
+
+.user-stat-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.user-stat {
+  background: #fff;
+  border: 1px solid #efe6d6;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  text-align: center;
+}
+.user-stat-num { font-size: 1.5rem; font-weight: 600; color: var(--primary-dark); }
+.user-stat-label { font-size: 0.78rem; color: var(--text-light); }
+
+.user-avatar-lg {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+}
+.user-profile-block {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.2rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid #eee;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.6rem;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.7rem 0.9rem;
+  background: #faf7f0;
+  border-radius: 8px;
+}
+
+/* === Admin: Phone lookup card === */
+
+.phone-lookup-card {
+  margin: 0.5rem 0 0.8rem;
+  padding: 0.7rem 0.9rem;
+  background: #fff7e6;
+  border: 1px solid #f1d28b;
+  border-radius: 8px;
+}
+.phone-lookup-card .btn { margin-top: 0.4rem; }
+
+.btn-link {
+  background: transparent;
+  border: none;
+  color: var(--primary-dark);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+  margin-left: 0.4rem;
+}
+
+.filter-search {
+  flex: 1;
+  min-width: 180px;
+  border: 1px solid #e0d6c0;
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+}
+
+.modal-lg { max-width: 720px; }
+
+@media (max-width: 600px) {
+  .drawer { max-width: 100%; }
+  .drawer-wide { max-width: 100%; }
+}

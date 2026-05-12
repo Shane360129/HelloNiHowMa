@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 const LINKS = [
   { path: '/admin/dashboard', label: '總覽' },
   { path: '/admin/bookings', label: '預約管理' },
+  { path: '/admin/users', label: 'LINE 客戶' },
   { path: '/admin/services', label: '服務項目' },
   { path: '/admin/works', label: '作品管理' },
   { path: '/admin/news', label: '最新消息' },

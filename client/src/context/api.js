@@ -211,6 +211,49 @@ export async function deleteBooking(id) {
   return handle(res, '刪除失敗');
 }
 
+/* Admin: Users (LINE 客戶 + 走入客戶) */
+export async function fetchAdminUsers(params = {}) {
+  const qs = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== '') qs.set(k, v); });
+  const res = await fetch(`${API}/api/admin/users${qs.toString() ? `?${qs}` : ''}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '載入用戶失敗');
+}
+export async function fetchAdminUser(id) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, { headers: authHeaders() });
+  return handle(res, '載入用戶失敗');
+}
+export async function lookupUserByPhone(phone) {
+  const res = await fetch(`${API}/api/admin/users/lookup?phone=${encodeURIComponent(phone)}`, {
+    headers: authHeaders()
+  });
+  return handle(res, '查詢失敗');
+}
+export async function updateAdminUser(id, payload) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '更新失敗');
+}
+export async function createAdminUser(payload) {
+  const res = await fetch(`${API}/api/admin/users`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload)
+  });
+  return handle(res, '建立失敗');
+}
+export async function deleteAdminUser(id) {
+  const res = await fetch(`${API}/api/admin/users/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders()
+  });
+  return handle(res, '刪除失敗');
+}
+
 /* Admin: Settings */
 export async function fetchSettings() {
   const res = await fetch(`${API}/api/admin/settings`, {
