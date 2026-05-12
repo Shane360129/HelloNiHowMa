@@ -1,17 +1,32 @@
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { connectDB } = require('./db');
-const Admin = require('./models/Admin');
-const Profile = require('./models/Profile');
-const Work = require('./models/Work');
-const Service = require('./models/Service');
-const Booking = require('./models/Booking');
-const Setting = require('./models/Setting');
-const News = require('./models/News');
+const {
+  Admin,
+  Profile,
+  Work,
+  Service,
+  Booking,
+  Setting,
+  News,
+  User
+} = require('./models');
 const { notifyBooking, sendTestMessage } = require('./line');
+const {
+  resolveLoginCredentials,
+  buildState,
+  verifyState,
+  buildAuthorizeUrl,
+  exchangeCode,
+  fetchProfile: fetchLineProfile,
+  verifyIdToken,
+  upsertLineUser
+} = require('./lineAuth');
 const {
   getDayAvailability,
   getMonthAvailability,
@@ -20,10 +35,69 @@ const {
 
 const app = express();
 const PORT = process.env.PORT || 4000;
-const JWT_SECRET = process.env.JWT_SECRET || 'la-paisley-admin-secret-key-2025';
 
-app.use(cors());
+// JWT_SECRET：生產環境必須由環境變數提供（spec §9.1）
+let JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  if (process.env.NODE_ENV === 'production') {
+    console.error('FATAL: JWT_SECRET environment variable is required in production.');
+    process.exit(1);
+  }
+  JWT_SECRET = 'dev-only-' + crypto.randomBytes(16).toString('hex');
+  console.warn('WARNING: JWT_SECRET not set. Using ephemeral dev secret (tokens expire on restart).');
+}
+
+const JWT_ADMIN_AUDIENCE = 'la-paisley-admin';
+const JWT_CUSTOMER_AUDIENCE = 'la-paisley-customer';
+
+// 信任 Render / Cloudflare 的 X-Forwarded-For，讓 rate limit 抓得到真實 IP
+app.set('trust proxy', 1);
+
+// CORS 白名單
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true); // 同源 / curl / server-to-server
+    if (ALLOWED_ORIGINS.length === 0) return cb(null, true); // 未設定 = 不限（開發用）
+    if (ALLOWED_ORIGINS.includes(origin)) return cb(null, true);
+    // LIFF 內嵌頁面從 line.me / liff.line.me 開啟
+    if (/^https:\/\/[a-z0-9-]+\.line(-apps)?\.(me|com)$/i.test(origin)) return cb(null, true);
+    return cb(new Error(`CORS not allowed: ${origin}`));
+  },
+  credentials: true
+}));
+
 app.use(express.json({ limit: '25mb' }));
+
+// ============ Rate Limiters ============
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '登入嘗試過於頻繁，請稍候再試' }
+});
+
+const bookingLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: '預約請求過於頻繁，請稍候再試' }
+});
+
+const lineAuthLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'LINE 授權請求過於頻繁，請稍候再試' }
+});
 
 async function initAdmin() {
   const existing = await Admin.findOne({ where: { username: 'admin' } });
@@ -42,16 +116,67 @@ async function initSettings() {
   }
 }
 
-function authMiddleware(req, res, next) {
+function adminMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: '未授權' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    req.user = jwt.verify(token, JWT_SECRET, { audience: JWT_ADMIN_AUDIENCE });
     next();
   } catch {
     res.status(401).json({ error: 'Token 無效或已過期' });
   }
 }
+
+// 別名：保留向後相容（其他 handler 仍呼叫 authMiddleware）
+const authMiddleware = adminMiddleware;
+
+async function customerMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: '請先以 LINE 登入' });
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET, { audience: JWT_CUSTOMER_AUDIENCE });
+    const user = await User.findByPk(decoded.sub);
+    if (!user) return res.status(401).json({ error: '帳號不存在' });
+    if (user.blocked) return res.status(403).json({ error: '此帳號已被停用' });
+    req.user = user;
+    req.userId = user.id;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Token 無效或已過期' });
+  }
+}
+
+function signCustomerToken(user) {
+  return jwt.sign(
+    {
+      sub: String(user.id),
+      lineUserId: user.lineUserId || null,
+      displayName: user.displayName
+    },
+    JWT_SECRET,
+    { expiresIn: '7d', audience: JWT_CUSTOMER_AUDIENCE }
+  );
+}
+
+// ============ Health ============
+
+app.get('/api/health', async (req, res) => {
+  const startedAt = Date.now();
+  let dbOk = false;
+  try {
+    await Setting.findOne({ attributes: ['id'] });
+    dbOk = true;
+  } catch (err) {
+    console.error('[health] db check failed:', err.message);
+  }
+  res.status(dbOk ? 200 : 503).json({
+    status: dbOk ? 'ok' : 'degraded',
+    uptime: process.uptime(),
+    db: dbOk,
+    responseTimeMs: Date.now() - startedAt,
+    version: process.env.RENDER_GIT_COMMIT?.slice(0, 7) || 'dev'
+  });
+});
 
 // ============ Public API ============
 
@@ -86,7 +211,10 @@ app.get('/api/public-settings', async (req, res) => {
     businessName: s.businessName,
     businessHours: s.businessHours,
     bookingNote: s.bookingNote,
-    bookingEnabled: s.bookingEnabled
+    bookingEnabled: s.bookingEnabled,
+    lineLoginRequired: s.lineLoginRequired !== false,
+    lineLiffId: s.lineLiffId || process.env.LINE_LIFF_ID || '',
+    googleAnalyticsId: s.googleAnalyticsId || ''
   });
 });
 
@@ -109,15 +237,42 @@ app.get('/api/availability/day', async (req, res) => {
   res.json(data);
 });
 
-app.post('/api/bookings', async (req, res) => {
+app.post('/api/bookings', bookingLimiter, async (req, res) => {
+  const settings = await Setting.findOne();
+  const requireLogin = settings?.lineLoginRequired !== false; // D1
+
+  // 嘗試解析 customer JWT（依設定可選）
+  let user = null;
+  const token = req.headers.authorization?.split(' ')[1];
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET, { audience: JWT_CUSTOMER_AUDIENCE });
+      user = await User.findByPk(decoded.sub);
+      if (user?.blocked) return res.status(403).json({ error: '此帳號已被停用' });
+    } catch {
+      // token 無效 → 視為未登入
+    }
+  }
+
+  if (requireLogin && !user) {
+    return res.status(401).json({
+      error: '請先以 LINE 登入再預約',
+      code: 'LINE_LOGIN_REQUIRED'
+    });
+  }
+
   const { name, phone, lineId, service, date, time, notes } = req.body || {};
-  if (!name || !phone || !service || !date || !time) {
+  const effectiveName = name || user?.displayName;
+  const effectiveLineId = user?.lineUserId || (lineId ? String(lineId).trim() : '');
+
+  if (!effectiveName || !phone || !service || !date || !time) {
     return res.status(400).json({ error: '請完整填寫姓名、電話、項目、日期與時間' });
   }
 
   const dateStr = String(date).trim();
   const timeStr = String(time).trim();
   const serviceStr = String(service).trim();
+  const phoneStr = String(phone).trim();
 
   const check = await validateBookingSlot({ date: dateStr, time: timeStr, service: serviceStr });
   if (!check.ok) {
@@ -125,15 +280,23 @@ app.post('/api/bookings', async (req, res) => {
   }
 
   const booking = await Booking.create({
-    name: String(name).trim(),
-    phone: String(phone).trim(),
-    lineId: lineId ? String(lineId).trim() : '',
+    name: String(effectiveName).trim(),
+    phone: phoneStr,
+    lineId: effectiveLineId,
+    userId: user?.id || null,
     service: serviceStr,
     date: dateStr,
     time: timeStr,
     durationMinutes: check.duration,
-    notes: notes ? String(notes).trim() : ''
+    notes: notes ? String(notes).trim() : '',
+    source: 'customer_self',
+    status: 'pending'
   });
+
+  // 補登用戶電話（首次預約時）
+  if (user && !user.phone && phoneStr) {
+    await user.update({ phone: phoneStr });
+  }
 
   notifyBooking(booking.toJSON()).catch(err => console.error('[LINE] notify error:', err));
 
@@ -145,7 +308,7 @@ app.post('/api/bookings', async (req, res) => {
 
 // ============ Auth API ============
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const { username, password } = req.body;
   const admin = await Admin.findOne({ where: { username } });
   if (!admin) return res.status(401).json({ error: '帳號或密碼錯誤' });
@@ -153,12 +316,176 @@ app.post('/api/auth/login', async (req, res) => {
   const valid = await bcrypt.compare(password, admin.password);
   if (!valid) return res.status(401).json({ error: '帳號或密碼錯誤' });
 
-  const token = jwt.sign({ username }, JWT_SECRET, { expiresIn: '24h' });
+  const token = jwt.sign(
+    { username, sub: String(admin.id) },
+    JWT_SECRET,
+    { expiresIn: '24h', audience: JWT_ADMIN_AUDIENCE }
+  );
   res.json({ token, username });
 });
 
 app.get('/api/auth/verify', authMiddleware, (req, res) => {
   res.json({ valid: true, username: req.user.username });
+});
+
+// ============ Customer Auth (LINE Login) ============
+
+// Step 1: 客戶點「LINE 登入」 → 後端 302 到 LINE 授權頁
+app.get('/api/auth/line/authorize', lineAuthLimiter, async (req, res) => {
+  try {
+    const { channelId, callbackUrl } = await resolveLoginCredentials();
+    if (!channelId || !callbackUrl) {
+      return res.status(500).json({ error: 'LINE Login 尚未設定，請聯絡管理員' });
+    }
+    const returnTo = typeof req.query.returnTo === 'string' ? req.query.returnTo : '/';
+    const state = buildState(JWT_SECRET, returnTo);
+    const url = buildAuthorizeUrl({ channelId, callbackUrl, state });
+    res.redirect(302, url);
+  } catch (err) {
+    console.error('[line/authorize]', err);
+    res.status(500).json({ error: '無法啟動 LINE 登入' });
+  }
+});
+
+// Step 2: LINE 重導回呼
+app.get('/api/auth/line/callback', lineAuthLimiter, async (req, res) => {
+  try {
+    const { code, state, error: lineError } = req.query;
+    if (lineError) {
+      return res.redirect(302, `/?login=cancelled`);
+    }
+    if (!code || !state) {
+      return res.status(400).send('Missing code or state');
+    }
+    const decodedState = verifyState(JWT_SECRET, String(state));
+    if (!decodedState) {
+      return res.status(400).send('Invalid or expired state');
+    }
+    const { channelId, channelSecret, callbackUrl } = await resolveLoginCredentials();
+    if (!channelId || !channelSecret || !callbackUrl) {
+      return res.status(500).send('LINE Login not configured');
+    }
+
+    const tokenResponse = await exchangeCode({
+      code: String(code),
+      channelId,
+      channelSecret,
+      callbackUrl
+    });
+    const profile = await fetchLineProfile(tokenResponse.access_token);
+    const user = await upsertLineUser(profile);
+    const jwtToken = signCustomerToken(user);
+
+    const returnTo = decodedState.returnTo || '/';
+    const safeReturn = returnTo.startsWith('/') ? returnTo : '/';
+    const sep = safeReturn.includes('?') ? '&' : '?';
+    res.redirect(302, `${safeReturn}${sep}token=${encodeURIComponent(jwtToken)}&login=success`);
+  } catch (err) {
+    console.error('[line/callback]', err);
+    res.redirect(302, '/?login=failed');
+  }
+});
+
+// LIFF 內：用 idToken 換 server JWT
+app.post('/api/auth/line/liff-token', lineAuthLimiter, async (req, res) => {
+  try {
+    const { idToken } = req.body || {};
+    if (!idToken) return res.status(400).json({ error: '缺少 idToken' });
+    const { channelId } = await resolveLoginCredentials();
+    if (!channelId) return res.status(500).json({ error: 'LINE Login 尚未設定' });
+
+    const verified = await verifyIdToken({ idToken, channelId });
+    const profile = {
+      userId: verified.sub,
+      displayName: verified.name || 'LINE 用戶',
+      pictureUrl: verified.picture || '',
+      statusMessage: ''
+    };
+    const user = await upsertLineUser(profile);
+    const token = signCustomerToken(user);
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        displayName: user.displayName,
+        pictureUrl: user.pictureUrl
+      }
+    });
+  } catch (err) {
+    console.error('[line/liff-token]', err);
+    res.status(401).json({ error: 'idToken 驗證失敗' });
+  }
+});
+
+// 取得目前登入客戶資訊
+app.get('/api/auth/me', customerMiddleware, async (req, res) => {
+  const u = req.user;
+  res.json({
+    id: u.id,
+    lineUserId: u.lineUserId,
+    displayName: u.displayName,
+    pictureUrl: u.pictureUrl,
+    email: u.email,
+    phone: u.phone,
+    reminderOptIn: u.reminderOptIn,
+    tags: u.tags || []
+  });
+});
+
+// 客戶登出（無狀態 JWT，後端僅回 200）
+app.post('/api/auth/logout', (req, res) => {
+  res.json({ ok: true });
+});
+
+// 客戶更新自己的個人資訊（電話、提醒偏好）
+app.patch('/api/me/profile', customerMiddleware, async (req, res) => {
+  const allowed = ['phone', 'email', 'reminderOptIn'];
+  const update = {};
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) update[key] = req.body[key];
+  }
+  await req.user.update(update);
+  res.json({ ok: true, user: req.user });
+});
+
+// ============ Customer: My Bookings ============
+
+app.get('/api/me/bookings', customerMiddleware, async (req, res) => {
+  const bookings = await Booking.findAll({
+    where: { userId: req.userId },
+    order: [['date', 'DESC'], ['time', 'DESC']]
+  });
+  res.json(bookings);
+});
+
+app.patch('/api/me/bookings/:id/cancel', customerMiddleware, async (req, res) => {
+  const booking = await Booking.findOne({
+    where: { id: req.params.id, userId: req.userId }
+  });
+  if (!booking) return res.status(404).json({ error: '預約不存在' });
+  if (!['pending', 'confirmed'].includes(booking.status)) {
+    return res.status(400).json({ error: '此預約狀態無法取消' });
+  }
+
+  // 取消時限檢查
+  const settings = await Setting.findOne();
+  const limitHours = settings?.bookingCancelHoursLimit ?? 24;
+  if (limitHours > 0) {
+    const tzOffset = Number(process.env.BOOKING_TZ_OFFSET_MINUTES ?? 480);
+    const nowMs = Date.now() + tzOffset * 60 * 1000;
+    const [y, mo, d] = booking.date.split('-').map(Number);
+    const [hh, mm] = booking.time.split(':').map(Number);
+    const bookingMs = Date.UTC(y, mo - 1, d, hh, mm);
+    const diffHours = (bookingMs - nowMs) / 1000 / 3600;
+    if (diffHours < limitHours) {
+      return res.status(400).json({
+        error: `距離預約時間少於 ${limitHours} 小時，無法線上取消，請直接聯絡店家`
+      });
+    }
+  }
+
+  await booking.update({ status: 'cancelled' });
+  res.json(booking);
 });
 
 // ============ Admin: Profile ============
@@ -218,21 +545,131 @@ app.delete('/api/admin/services/:id', authMiddleware, async (req, res) => {
 // ============ Admin: Bookings ============
 
 app.get('/api/admin/bookings', authMiddleware, async (req, res) => {
-  const { status } = req.query;
-  const where = status ? { status } : {};
-  const bookings = await Booking.findAll({ where, order: [['createdAt', 'DESC']] });
+  const { status, source } = req.query;
+  const where = {};
+  if (status) where.status = status;
+  if (source) where.source = source;
+  const bookings = await Booking.findAll({
+    where,
+    order: [['createdAt', 'DESC']],
+    include: [{ model: User, as: 'user', attributes: ['id', 'lineUserId', 'pictureUrl', 'tags', 'reminderOptIn'] }]
+  });
   res.json(bookings);
 });
 
+// 後台代客建立預約（D2 + D8）
+app.post('/api/admin/bookings', authMiddleware, async (req, res) => {
+  const {
+    name, phone, lineId, service, date, time, durationMinutes,
+    notes, internalNotes, source, userId,
+    status, ignoreConflict
+  } = req.body || {};
+
+  if (!name || !phone || !service || !date || !time || !source) {
+    return res.status(400).json({ error: '請填寫姓名、電話、來源、項目、日期與時間' });
+  }
+  if (!['admin_phone', 'admin_dm', 'walk_in'].includes(source)) {
+    return res.status(400).json({ error: '預約來源無效' });
+  }
+
+  const dateStr = String(date).trim();
+  const timeStr = String(time).trim();
+  const serviceStr = String(service).trim();
+  const phoneStr = String(phone).trim();
+  const nameStr = String(name).trim();
+
+  const check = await validateBookingSlot({ date: dateStr, time: timeStr, service: serviceStr });
+  if (!ignoreConflict && !check.ok) {
+    return res.status(400).json({ error: check.error });
+  }
+  const duration = Number(durationMinutes) || check.duration || 210;
+
+  // D8：找到或建立 User
+  let user = null;
+  if (userId) user = await User.findByPk(userId);
+  if (!user) user = await User.findOne({ where: { phone: phoneStr } });
+  if (!user) {
+    user = await User.create({
+      lineUserId: null,
+      source,
+      displayName: nameStr,
+      phone: phoneStr,
+      createdByAdminId: req.user?.sub ? Number(req.user.sub) : null
+    });
+  }
+
+  const initialStatus = status === 'confirmed' ? 'confirmed' : 'pending';
+
+  const booking = await Booking.create({
+    name: nameStr,
+    phone: phoneStr,
+    lineId: lineId || user.lineUserId || '',
+    userId: user.id,
+    service: serviceStr,
+    date: dateStr,
+    time: timeStr,
+    durationMinutes: duration,
+    notes: notes ? String(notes).trim() : '',
+    internalNotes: internalNotes ? String(internalNotes).trim() : '',
+    status: initialStatus,
+    source,
+    createdByAdminId: req.user?.sub ? Number(req.user.sub) : null
+  });
+
+  // D2：建立時不推播店家通知（admin 自己建立的）
+  // D2：若 status 直接 = confirmed 且有 LINE userId，推「預約成功」訊息
+  if (initialStatus === 'confirmed' && user.lineUserId) {
+    // Phase 4 會走訊息模板系統；目前 Phase 2 先簡單推一則確認訊息給客戶
+    const { resolveCredentials, pushText } = require('./line');
+    resolveCredentials().then(({ channelAccessToken }) => {
+      if (!channelAccessToken) return;
+      const text =
+        `${nameStr} 您好！您的預約已確認 ✨\n\n` +
+        `項目：${serviceStr}\n日期：${dateStr} ${timeStr}`;
+      return pushText(channelAccessToken, user.lineUserId, text);
+    }).catch(err => console.error('[LINE] admin booking notify error:', err.message));
+  }
+
+  res.status(201).json(booking);
+});
+
 app.patch('/api/admin/bookings/:id', authMiddleware, async (req, res) => {
-  const allowed = ['status', 'name', 'phone', 'lineId', 'service', 'date', 'time', 'notes'];
+  const allowed = [
+    'status', 'name', 'phone', 'lineId', 'service',
+    'date', 'time', 'notes', 'internalNotes', 'durationMinutes'
+  ];
   const update = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) update[key] = req.body[key];
   }
   const booking = await Booking.findByPk(req.params.id);
   if (!booking) return res.status(404).json({ error: '預約不存在' });
+
+  const prevStatus = booking.status;
   await booking.update(update);
+
+  // D2：狀態切換時自動推播客戶
+  if (update.status && update.status !== prevStatus && booking.userId) {
+    const user = await User.findByPk(booking.userId);
+    if (user?.lineUserId) {
+      const { resolveCredentials, pushText } = require('./line');
+      let text = null;
+      if (update.status === 'confirmed') {
+        text = `${booking.name} 您好！您的預約已確認 ✨\n\n項目：${booking.service}\n日期：${booking.date} ${booking.time}`;
+      } else if (update.status === 'cancelled') {
+        text = `${booking.name} 您好，您 ${booking.date} ${booking.time} 的預約已取消。如有疑問請與我們聯絡。`;
+      } else if (update.status === 'completed') {
+        text = `${booking.name} 您好，感謝您的光臨 💕 期待下次與您相見！`;
+      }
+      if (text) {
+        resolveCredentials().then(({ channelAccessToken }) => {
+          if (!channelAccessToken) return;
+          return pushText(channelAccessToken, user.lineUserId, text);
+        }).catch(err => console.error('[LINE] status change notify error:', err.message));
+      }
+    }
+  }
+
   res.json(booking);
 });
 

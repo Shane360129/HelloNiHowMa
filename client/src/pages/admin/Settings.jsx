@@ -101,15 +101,16 @@ export default function Settings() {
         <h3>預約時段設定</h3>
         <ScheduleEditor settings={settings} onChange={update} />
 
-        <h3>LINE 通知</h3>
+        <h3>LINE Messaging API（店家通知）</h3>
         <div className="alert alert-info" style={{ marginTop: 0 }}>
-          <div>以下任一種方式皆可：</div>
+          <div>新預約建立時會自動推播到店家 LINE。請於 LINE Developers Console 取得：</div>
           <ul style={{ paddingLeft: '1.2rem', marginTop: '0.3rem' }}>
-            <li><strong>LINE Messaging API</strong>（推薦）：填入 Channel Access Token 與推播對象 ID（userId / groupId）</li>
-            <li><strong>LINE Notify</strong>（舊制）：填入個人發行的 Notify Token</li>
+            <li>Channel Access Token（長效）</li>
+            <li>Channel Secret（webhook 簽章驗證用）</li>
+            <li>推播對象 userId / groupId</li>
           </ul>
           <div style={{ fontSize: '0.8rem', marginTop: '0.4rem' }}>
-            也可改用環境變數：LINE_CHANNEL_ACCESS_TOKEN / LINE_TARGET_ID / LINE_NOTIFY_TOKEN
+            也可改用環境變數：LINE_MESSAGING_CHANNEL_ACCESS_TOKEN / LINE_MESSAGING_CHANNEL_SECRET / LINE_TARGET_ID
           </div>
         </div>
         <div className="form-row">
@@ -123,8 +124,30 @@ export default function Settings() {
           </div>
         </div>
         <div className="form-group">
-          <label>LINE Notify Token（舊制備援）</label>
-          <input value={settings.lineNotifyToken || ''} onChange={e => update('lineNotifyToken', e.target.value)} />
+          <label>Channel Secret（webhook 簽章驗證）</label>
+          <input value={settings.lineChannelSecret || ''} onChange={e => update('lineChannelSecret', e.target.value)} placeholder="可留空，Phase 4 啟用 webhook 時填入" />
+        </div>
+
+        <h3>LINE Login（客戶登入）</h3>
+        <div className="alert alert-info" style={{ marginTop: 0 }}>
+          <div>客戶用 LINE 註冊/登入預約頁所需的憑證。請於 LINE Developers Console 建立 LINE Login Channel + LIFF App：</div>
+          <div style={{ fontSize: '0.8rem', marginTop: '0.4rem' }}>
+            也可改用環境變數：LINE_LOGIN_CHANNEL_ID / LINE_LOGIN_CHANNEL_SECRET / LINE_LIFF_ID
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label>LINE Login Channel ID</label>
+            <input value={settings.lineLoginChannelId || ''} onChange={e => update('lineLoginChannelId', e.target.value)} placeholder="2001234567" />
+          </div>
+          <div className="form-group">
+            <label>LINE Login Channel Secret</label>
+            <input value={settings.lineLoginChannelSecret || ''} onChange={e => update('lineLoginChannelSecret', e.target.value)} />
+          </div>
+        </div>
+        <div className="form-group">
+          <label>LIFF ID</label>
+          <input value={settings.lineLiffId || ''} onChange={e => update('lineLiffId', e.target.value)} placeholder="2001234567-AbCdEfGh" />
         </div>
 
         <div className="form-actions">

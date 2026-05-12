@@ -21,7 +21,7 @@ function formatBookingMessage(booking) {
   return lines.join('\n');
 }
 
-async function sendViaMessagingApi(token, to, text) {
+async function pushText(token, to, text) {
   const res = await fetch('https://api.line.me/v2/bot/message/push', {
     method: 'POST',
     headers: {
@@ -36,85 +36,73 @@ async function sendViaMessagingApi(token, to, text) {
   }
 }
 
-async function sendViaNotify(token, text) {
-  const params = new URLSearchParams({ message: `\n${text}` });
-  const res = await fetch('https://notify-api.line.me/api/notify', {
+async function pushFlex(token, to, altText, contents) {
+  const res = await fetch('https://api.line.me/v2/bot/message/push', {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`
     },
-    body: params.toString()
+    body: JSON.stringify({
+      to,
+      messages: [{ type: 'flex', altText, contents }]
+    })
   });
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`LINE Notify ${res.status}: ${body}`);
+    throw new Error(`LINE Messaging API ${res.status}: ${body}`);
   }
 }
 
-async function resolveSettings() {
+async function resolveCredentials() {
   const dbSettings = await Setting.findOne();
   return {
-    channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN || dbSettings?.lineChannelAccessToken || '',
-    targetId: process.env.LINE_TARGET_ID || dbSettings?.lineTargetId || '',
-    notifyToken: process.env.LINE_NOTIFY_TOKEN || dbSettings?.lineNotifyToken || ''
+    channelAccessToken:
+      process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN ||
+      dbSettings?.lineChannelAccessToken ||
+      '',
+    channelSecret:
+      process.env.LINE_MESSAGING_CHANNEL_SECRET ||
+      dbSettings?.lineChannelSecret ||
+      '',
+    targetId:
+      process.env.LINE_TARGET_ID ||
+      dbSettings?.lineTargetId ||
+      ''
   };
 }
 
 async function notifyBooking(booking) {
   const text = formatBookingMessage(booking);
-  const { channelAccessToken, targetId, notifyToken } = await resolveSettings();
-
-  const attempts = [];
-
-  if (channelAccessToken && targetId) {
-    try {
-      await sendViaMessagingApi(channelAccessToken, targetId, text);
-      attempts.push({ channel: 'messaging-api', ok: true });
-    } catch (err) {
-      attempts.push({ channel: 'messaging-api', ok: false, error: err.message });
-    }
-  }
-
-  if (notifyToken) {
-    try {
-      await sendViaNotify(notifyToken, text);
-      attempts.push({ channel: 'notify', ok: true });
-    } catch (err) {
-      attempts.push({ channel: 'notify', ok: false, error: err.message });
-    }
-  }
-
-  if (attempts.length === 0) {
-    console.log('[LINE] No credentials configured, skipping notification');
+  const { channelAccessToken, targetId } = await resolveCredentials();
+  if (!channelAccessToken || !targetId) {
+    console.log('[LINE] credentials not configured, skipping notification');
     return { skipped: true };
   }
-
-  const anySuccess = attempts.some(a => a.ok);
-  if (!anySuccess) {
-    console.error('[LINE] All notification attempts failed', attempts);
-  } else {
-    console.log('[LINE] Notification sent', attempts);
+  try {
+    await pushText(channelAccessToken, targetId, text);
+    console.log('[LINE] notification sent');
+    return { ok: true };
+  } catch (err) {
+    console.error('[LINE] notification failed:', err.message);
+    return { ok: false, error: err.message };
   }
-  return { attempts };
 }
 
 async function sendTestMessage() {
   const text = '【La Paisley】這是一則 LINE 通知測試訊息 ✨';
-  const { channelAccessToken, targetId, notifyToken } = await resolveSettings();
-  if (!channelAccessToken && !notifyToken) {
-    throw new Error('尚未設定任何 LINE 金鑰');
-  }
-  if (channelAccessToken && !targetId) {
-    throw new Error('已設定 Channel Access Token，但缺少推播對象 ID');
-  }
-  if (channelAccessToken && targetId) {
-    await sendViaMessagingApi(channelAccessToken, targetId, text);
-  }
-  if (notifyToken) {
-    await sendViaNotify(notifyToken, text);
-  }
+  const { channelAccessToken, targetId } = await resolveCredentials();
+  if (!channelAccessToken) throw new Error('尚未設定 Channel Access Token');
+  if (!targetId) throw new Error('尚未設定推播對象 ID');
+  await pushText(channelAccessToken, targetId, text);
   return { ok: true };
 }
 
-module.exports = { notifyBooking, sendTestMessage, formatBookingMessage };
+module.exports = {
+  notifyBooking,
+  sendTestMessage,
+  formatBookingMessage,
+  pushText,
+  pushFlex,
+  resolveCredentials
+};
