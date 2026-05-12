@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchProfile, fetchServices, fetchPublicSettings, createBooking } from '../context/api';
 import { useCustomerAuth } from '../context/CustomerAuthContext';
+import { openExternal } from '../lib/liff';
 import Footer from '../components/Footer';
 import BookingCalendar from '../components/BookingCalendar';
 
@@ -11,7 +12,7 @@ const STEPS = [
 ];
 
 export default function Booking() {
-  const { user: customer, loginWithLine, loading: customerLoading, refreshMe } = useCustomerAuth();
+  const { user: customer, loginWithLine, loading: customerLoading, refreshMe, inLineApp } = useCustomerAuth();
 
   const [profile, setProfile] = useState(null);
   const [services, setServices] = useState([]);
@@ -97,6 +98,11 @@ export default function Booking() {
           <div className="eyebrow">Book an Appointment</div>
           <h1>線上預約</h1>
           <p>{settings?.bookingNote || '預約送出後，我們會透過 LINE 或電話確認實際時段'}</p>
+          {inLineApp && (
+            <div className="liff-banner">
+              <span className="line-icon">L</span> 您正在 LINE 內預約
+            </div>
+          )}
         </div>
       </section>
 
@@ -127,7 +133,13 @@ export default function Booking() {
               </p>
               <div style={{ textAlign: 'center', marginTop: '1rem' }}>
                 {profile?.social?.line && (
-                  <a className="btn btn-outline btn-sm" href={profile.social.line} target="_blank" rel="noreferrer">加 LINE</a>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    onClick={() => openExternal(profile.social.line)}
+                  >
+                    加 LINE
+                  </button>
                 )}
                 {profile?.phone && (
                   <a className="btn btn-outline btn-sm" href={`tel:${profile.phone}`} style={{ marginLeft: '0.5rem' }}>
