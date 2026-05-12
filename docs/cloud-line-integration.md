@@ -1,9 +1,9 @@
 # La Paisley 雲端部署 + LINE 生態整合規格書
 
-> **版本**：v1.2 (Draft)
+> **版本**：v1.3 (Draft)
 > **撰寫日期**：2026-05-11
 > **作者**：Shane / Claude
-> **狀態**：待 Shane 審閱
+> **狀態**：規格凍結，可進入 Phase 1 開發
 
 ---
 
@@ -18,6 +18,11 @@
 | D3 | 每日預約提醒時間 | **店家可在後台自訂**（`settings.reminderTime`，預設 10:00） |
 | D4 | 店家收到的新預約通知格式 | **Flex Message**，含「✅ 確認預約」「❌ 取消預約」「📋 查看詳情」按鈕，店家在 LINE 內可一鍵更新狀態 |
 | D5 | 開發節奏 | 全部 Phase 在 `claude/analyze-project-content-0kt37` 分支完成後，**一次合併**為單一 PR |
+| D6 | 雲端架構 | **Render Standard + Supabase Pro + Cloudflare**（網域與月費上限暫定後續決定） |
+| D7 | 預約規則 | 採各項預設值：取消時限 24h、前後緩衝 0 分、每用戶每週無上限；提醒**僅前一天**（不加 H-3） |
+| D8 | 走入/電話/私訊客戶 | **一律建立 User 紀錄**（`lineUserId` 可為 NULL），未來可累積該客戶歷史 |
+| D9 | 客戶可關閉提醒 | User 加 `reminderOptIn` 欄位（預設 true），於 LIFF / 我的預約頁可關閉 |
+| D10 | 上線方式 | **Soft launch**：先邀請 10~20 位現有客戶試用 1-2 週，期間收集回饋；同時整合 **GA4** 追蹤轉換率 |
 
 ---
 
@@ -178,23 +183,47 @@
 // server/models/User.js
 {
   id:           INTEGER PK AUTO_INCREMENT,
-  lineUserId:   STRING UNIQUE NOT NULL,   // LINE 提供的 U[a-f0-9]{32}
+  lineUserId:   STRING NULL,                // LINE U[a-f0-9]{32}, 走入/電話客戶可為 NULL (D8)
+  source:       ENUM('line','walk_in','phone','dm') NOT NULL DEFAULT 'line',
   displayName:  STRING NOT NULL,
   pictureUrl:   STRING DEFAULT '',
-  email:        STRING DEFAULT '',         // 需 email scope, 可為空
-  phone:        STRING DEFAULT '',         // 第一次預約時補填
+  email:        STRING DEFAULT '',          // 需 email scope, 可為空
+  phone:        STRING DEFAULT '',          // 第一次預約時補填; 離線用戶必填
   statusMessage: STRING DEFAULT '',
   language:     STRING DEFAULT 'zh-TW',
-  isFollowingOA: BOOLEAN DEFAULT false,    // 是否已 follow 官方帳號
-  lastLoginAt:  DATE,
+  isFollowingOA: BOOLEAN DEFAULT false,     // 是否已 follow 官方帳號
+  reminderOptIn: BOOLEAN DEFAULT true,      // 是否接收預約提醒 (D9)
+  tags:         JSONB DEFAULT '[]',          // ['VIP','新客','黑名單'...]
+  notes:        TEXT DEFAULT '',             // 管理員備註
+  blocked:      BOOLEAN DEFAULT false,       // 黑名單（禁止預約）
+  createdByAdminId: INTEGER NULL FK -> admins.id,  // 離線用戶由哪位管理員建立
+  lastLoginAt:  DATE NULL,                   // 離線用戶可為 NULL
   createdAt:    DATE,
   updatedAt:    DATE
 }
 ```
 
 **索引**：
-- `UNIQUE INDEX` on `lineUserId`
-- `INDEX` on `phone`（管理員搜尋用）
+- **部分唯一索引** on `lineUserId` WHERE `lineUserId IS NOT NULL`（D8：允許多筆 NULL，但 LINE 用戶不可重複）
+  ```sql
+  CREATE UNIQUE INDEX users_line_user_id_unique_idx
+    ON users (lineUserId)
+    WHERE lineUserId IS NOT NULL;
+  ```
+- `INDEX` on `phone`（管理員搜尋、同電話歷史聚合用）
+- `INDEX` on `source`（用戶來源統計）
+
+**用戶來源語意**：
+| `source` | 建立時機 | `lineUserId` |
+|----------|----------|--------------|
+| `line` | 客戶用 LINE 登入或 LIFF 註冊 | 必填 |
+| `walk_in` | 後台代客建立 + 來源「走入」 | 可空 |
+| `phone` | 後台代客建立 + 來源「電話」 | 可空 |
+| `dm` | 後台代客建立 + 來源「私訊」 | 可空（若客戶提供 LINE ID 可填，但通常為空白） |
+
+**重要邏輯**：
+- 後台代客建立預約時（§6.5），同電話搜尋若無對應 User → 自動建立 User row（`source=admin 選的來源`）
+- 該客戶之後若用 LINE 登入網站 → 系統可詢問「您是否就是 0912xxx 的王小姐？」進行帳號合併（v2 功能，本期手動合併）
 
 ### 4.2 修改 `bookings` 表
 
@@ -506,17 +535,24 @@ LIFF 內取得 server JWT。
 }
 ```
 
-**處理邏輯**（依 D2 決策）：
+**處理邏輯**（依 D2、D8 決策）：
 1. 驗證 admin JWT
-2. 若 `ignoreConflict=false`，跑 `validateBookingSlot()`；否則跳過
-3. 若提供 `userId`，自動帶入該用戶的 LINE userId 與姓名
-4. 建立 booking，記錄 `createdByAdminId` 與 `source`
-5. **不**推播任何訊息給客戶（D2：等狀態改為 confirmed 才推）
-6. **不**推播店家通知（admin 自己建立的，已知）
-7. 若 `status === 'confirmed'`（admin 直接以已確認狀態建立）且 booking 有 LINE userId → 立即觸發 `booking_confirmed_customer`
-8. 記錄 audit log
+2. 若 `ignoreConflict=true` → 前端必須先過 modal 二次確認；後端額外檢查請求是否含 `confirmedIgnoreConflict: true`
+3. 若 `ignoreConflict=false`，跑 `validateBookingSlot()`
+4. **User 處理（D8）**：
+   - 若提供 `userId` → 取用該 User 的 lineUserId、合併 displayName
+   - 若未提供 `userId` → 用 `phone` 在 users 表查找
+     - 找到 → 使用該 User
+     - 找不到 → **自動建立新 User**（`source` 對應 booking source、`lineUserId=NULL`、`createdByAdminId=當前 admin`、`displayName=表單姓名`、`phone=表單電話`）
+5. 建立 booking，`userId` 必定有值（D8：所有預約都連結 User）、記錄 `createdByAdminId` 與 `source`
+6. **不**推播任何訊息給客戶（D2：等狀態改為 confirmed 才推）
+7. **不**推播店家通知（admin 自己建立的，已知）
+8. 若 `status === 'confirmed'`（admin 直接以已確認狀態建立）且 User 有 `lineUserId` → 立即觸發 `booking_confirmed_customer`
+9. 記錄 audit log
 
-**設計理由**：D2 規定後台代客預約不在建立時打擾客戶（很多狀況是電話接洽中、客戶還沒最終答應），等店家確認時間後再發「預約成功」訊息。
+**設計理由**：
+- D2：後台代客預約不在建立時打擾客戶（常是電話接洽中、客戶還沒最終答應），等店家確認時間後再發「預約成功」訊息。
+- D8：每筆預約都連結到 User，讓「同電話歷史」、「客戶終身價值」、「VIP 標籤」等功能可一致運作；走入客戶若日後用 LINE 登入，管理員可手動合併帳號。
 
 #### `PATCH /api/admin/bookings/:id`（既有，補充狀態流轉副作用）
 
@@ -948,10 +984,15 @@ LINE Messaging API 配額查詢。
 3. 計算現在時間（台北時區），與 `reminderTime` 比對：
    - 若小時不符 → 直接結束（保留每整點都跑的彈性）
    - 若小時相符且分鐘 ≤ 30 → 繼續
-4. 計算目標日期：`今天 + reminderLeadDays`
-5. 撈出 `date = 目標日期` 且 `status IN (pending, confirmed)` 且 `reminderSentAt IS NULL` 的 booking
+4. 計算目標日期：`今天 + reminderLeadDays`（D7 已決議 = 1 = 前一天）
+5. 撈出符合所有條件的 booking：
+   - `date = 目標日期`
+   - `status IN (pending, confirmed)`
+   - `reminderSentAt IS NULL`
+   - **JOIN users WHERE `users.reminderOptIn = true`**（D9：客戶可關閉）
+   - **JOIN users WHERE `users.lineUserId IS NOT NULL`**（D8：離線用戶無法推播）
 6. 對每筆套 `booking_reminder` 模板推送
-7. 更新 `reminderSentAt = now()`
+7. 更新 `reminderSentAt = now()`（即使客戶 opt-out 也標記，避免 cron 重複撈）
 
 **Render 設定**：
 ```yaml
@@ -1251,8 +1292,28 @@ Phase 1 ─▶ 2 ─▶ 2.5 ─▶ 3 ─▶ 4 ─▶ 4.5 ─▶ 4.7 ─▶ 5
 - 多語系（簡中、英）
 - 客戶評價與作品授權
 - 集點卡 / 老客戶 VIP 制度
-- Google Analytics + LINE Tag for marketing
 - 管理員 LINE Bot（店家主管理員透過 LINE 收預約、回覆）
+- LINE 與 walk-in User 自動帳號合併（目前需管理員手動）
+- 多 admin / 權限分級
+
+## 15.1 v1 內納入的營運觀測（依 D10）
+
+雖然非核心功能，但因 Soft Launch 需要驗證轉換率，本期一併納入：
+
+### Google Analytics 4（GA4）
+
+- 前端 SPA 整合 `gtag` / `react-ga4`，追蹤：
+  - PageView（含路由切換）
+  - 自訂事件：`view_service`, `start_booking`, `submit_booking`, `line_login_start`, `line_login_complete`, `liff_open`
+- 不追蹤敏感欄位（電話、姓名）
+- 後台「系統設定」加 `googleAnalyticsId` 欄位（GA4 Measurement ID），可由店家自行設定
+
+### Soft Launch 計畫
+
+1. 完成 Phase 5 整合測試後，邀請 10-20 位常客提供測試
+2. 在 LINE 官方帳號發布 Soft Launch 公告 + 帶 GA `utm_source=soft_launch` 連結
+3. 試用期 1-2 週，期間每日檢視 GA 漏斗 + 後台稽核日誌
+4. 收集回饋並調整 → 正式公開上線
 
 ---
 
@@ -1433,35 +1494,15 @@ Phase 1 ─▶ 2 ─▶ 2.5 ─▶ 3 ─▶ 4 ─▶ 4.5 ─▶ 4.7 ─▶ 5
 
 ---
 
-## 17. 待 Shane 確認事項
+## 17. 待 Shane 確認事項（剩餘）
 
-> 已決議的事項移至文件頂部「📌 決策紀錄」區塊。以下為仍需釐清的項目。
+> 已決議的事項全部移至文件頂部「📌 決策紀錄」區塊（D1~D10）。以下為**僅在開發過程中可決定**的執行細節，不影響規格凍結。
 
-### 17.1 基礎決策
-- [ ] 雲端架構是否採 **Render + Supabase + Cloudflare**？（預設方案）
-- [ ] 預計購買的網域名稱（用於 Channel 設定）？
-- [ ] 是否需要 email scope（會增加 LINE Login 申請手續）？
-- [ ] 月費預算上限（影響方案選擇）？
-
-### 17.2 預約規則細節
-- [ ] 取消時限預設 24 小時是否合理？（已預設 24h）
-- [ ] 每位用戶每週預約上限要設嗎？（已預設 0 = 不限）
-- [ ] 預約前後緩衝時間（清潔/準備）預設幾分鐘？（已預設 0）
-- [ ] 提醒前置天數預設 1 天（前一天提醒），是否需要再加 H-3（前 3 小時）？
-
-### 17.3 後台代客預約細節
-- [ ] 「忽略時段衝突」按鈕是否需要二次確認（例如 modal 警告）？
-- [ ] 「走入客戶」是否要建立 User 紀錄（無 LINE userId 也建立）以便將來追蹤？
-- [ ] 後台是否允許 admin 直接指定預約 status（pending / confirmed 二選一），或一律 pending？
-
-### 17.4 訊息與推播細節
-- [ ] 客戶可以選擇「不接受提醒」嗎？（個人偏好設定，預設都收到）
-- [ ] 推播配額警告閾值（剩 N 則時警告，目前預設 50）
-- [ ] 店家 LINE 一鍵確認後，是否同時要在後台介面顯示「來自 LINE 的操作」標記？
-
-### 17.5 上線
-- [ ] 上線時想要先邀請少量客戶試用（soft launch）還是直接公開？
-- [ ] 是否需要 Google Analytics / GA4 追蹤前台轉換率？
+### 17.1 開發過程中再決定
+- [ ] 自有網域名稱（買好後告訴我，我把所有 callback URL 換掉）
+- [ ] LINE Login 是否申請 `email` scope（需上傳業務證明，建議 v1 先不申請，靠電話辨識）
+- [ ] 月費預算上限（v1 上線後依實際流量決定是否升級 Render Pro / Supabase Team）
+- [ ] GA4 Measurement ID（Soft Launch 開始前提供即可）
 
 ---
 
@@ -1472,3 +1513,4 @@ Phase 1 ─▶ 2 ─▶ 2.5 ─▶ 3 ─▶ 4 ─▶ 4.5 ─▶ 4.7 ─▶ 5
 | v1.0 | 2026-05-11 | 初版 |
 | v1.1 | 2026-05-11 | 擴充後台管理功能：代客預約、訊息模板、主動推播、用戶管理、稽核日誌；新增 Phase 2.5 / 4.5 / 4.7 |
 | v1.2 | 2026-05-11 | 確認 Shane 5 項決策（D1~D5）；後台代客預約改為「不自動推播，待確認後再推」流程；新增店家 LINE 一鍵確認 Flex Message + postback 流程；提醒時間改為後台可自訂；開發採單一 PR 合併 |
+| v1.3 | 2026-05-11 | 完成決策 D6~D10；`User.lineUserId` 改為 nullable + 部分唯一索引，支援走入/電話客戶建立 User；新增 `reminderOptIn`、`source`、`tags` 等欄位；GA4 + Soft Launch 納入 v1；規格凍結，可進入 Phase 1 開發 |
